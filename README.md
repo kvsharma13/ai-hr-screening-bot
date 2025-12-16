@@ -509,10 +509,6 @@ For issues or questions:
 
 ---
 
-## 📄 License
-
-MIT License - Mindmap Digital
-
 ---
 
 ## 🎉 You're All Set!
