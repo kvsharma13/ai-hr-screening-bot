@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Recruitment System - Mindmap Digital</title>
+    <style>
+        :root {
+            --bg-body: #f3f4f6;
+            --bg-card: #ffffff;
+            --border-subtle: #e5e7eb;
+            --text-main: #111827;
+            --text-muted: #6b7280;
+            --primary: #2563eb;
+            --primary-soft: #dbeafe;
+            --primary-strong: #1d4ed8;
+            --success: #16a34a;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --shadow-soft: 0 10px 30px rgba(15, 23, 42, 0.07);
+            --radius-lg: 16px;
+            --radius-pill: 999px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: var(--bg-body);
+            color: var(--text-main);
+            min-height: 100vh;
+        }
+        .app-shell {
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 24px 16px 40px;
+            display: flex;
+            gap: 20px;
+        }
+        .main-column { flex: 1; min-width: 0; }
+        .sidebar-column {
+            width: 260px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 20px;
+            height: fit-content;
+        }
+        @media (max-width: 960px) {
+            .app-shell { flex-direction: column; }
+            .sidebar-column { width: 100%; position: static; order: -1; }
+        }
+        /* Header */
+        .header {
+            background: var(--bg-card);
+            padding: 20px 24px;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-soft);
+            border: 1px solid var(--border-subtle);
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+        }
+        h1 { font-size: 22px; font-weight: 700; }
+        .subtitle { color: var(--text-muted); font-size: 13px; margin-top: 4px; }
+        .header-badge {
+            padding: 6px 12px;
+            border-radius: var(--radius-pill);
+            background: #ecfdf3;
+            color: #166534;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        /* Card */
+        .card {
+            background: var(--bg-card);
+            padding: 20px 24px;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-soft);
+            border: 1px solid var(--border-subtle);
+            margin-bottom: 20px;
+        }
+        .card-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+        .card-subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+        
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 16px;
+        }
+        .form-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+            margin-bottom: 6px;
+        }
+        .form-input, .form-textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+        .form-input:focus, .form-textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px var(--primary-soft);
+        }
+        .form-textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+        }
+        .help-text {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+        
+        /* Upload */
+        .upload-area {
+            border: 1.5px dashed #cbd5e1;
+            border-radius: 12px;
+            padding: 26px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #f9fafb;
+        }
+        .upload-area:hover { background: #eef2ff; border-color: var(--primary); }
+        #fileInput { display: none; }
+        .upload-icon { font-size: 32px; margin-bottom: 8px; }
+        .file-list { margin-top: 12px; }
+        .file-item {
+            background: #f9fafb;
+            padding: 8px 10px;
+            border-radius: 8px;
+            margin: 4px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+        
+        /* Buttons */
+        .btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 8px 18px;
+            border-radius: var(--radius-pill);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+            margin: 3px;
+        }
+        .btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.2);
+            background: var(--primary-strong);
+        }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-success { background: var(--success); }
+        .btn-neutral { background: #e5e7eb; color: #111827; }
+        .btn-danger { background: var(--danger); }
+        .btn-small { padding: 5px 12px; font-size: 11px; }
+        
+        /* Alerts */
+        .alert {
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-top: 12px;
+            font-size: 12px;
+        }
+        .alert-success { background: #ecfdf3; border: 1px solid #bbf7d0; color: #166534; }
+        .alert-error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+        .alert-warning { background: #fef3c7; border: 1px solid #fde68a; color: #92400e; }
+        .alert-info { background: #dbeafe; border: 1px solid #bfdbfe; color: #1e40af; }
+        
+        /* Controls */
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .view-toggle {
+            display: inline-flex;
+            background: #f3f4ff;
+            border-radius: var(--radius-pill);
+            padding: 2px;
+        }
+        .toggle-btn {
+            border: none;
+            padding: 6px 10px;
+            border-radius: var(--radius-pill);
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            background: transparent;
+            color: #4b5563;
+            transition: all 0.15s;
+        }
+        .toggle-btn.active {
+            background: #ffffff;
+            color: var(--primary-strong);
+            box-shadow: 0 2px 6px rgba(37, 99, 235, 0.18);
+        }
+        
+        /* Table */
+        .table-container { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border-subtle); }
+        table { width: 100%; border-collapse: collapse; background: white; }
+        thead { background: #f9fafb; }
+        th, td {
+            padding: 9px 10px;
+            text-align: left;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 12px;
+        }
+        th {
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #6b7280;
+        }
+        tbody tr:hover { background: #f9fafb; }
+        
+        /* Status badges */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            border-radius: var(--radius-pill);
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .status-new { background: #e0f2fe; color: #1d4ed8; }
+        .status-calling { background: #fef3c7; color: #92400e; }
+        .status-completed { background: #dcfce7; color: #166534; }
+        .status-qualified { background: #dcfce7; color: #166534; }
+        .status-rejected { background: #fee2e2; color: #b91c1c; }
+        .status-scheduled { background: #e0e7ff; color: #4c1d95; }
+        .status-skillmismatch { background: #fef3c7; color: #92400e; }
+        
+        .score {
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            display: inline-block;
+        }
+        .score-high { background: #dcfce7; color: #166534; }
+        .score-medium { background: #fef3c7; color: #92400e; }
+        .score-low { background: #fee2e2; color: #b91c1c; }
+        
+        /* Loading */
+        .loading { text-align: center; padding: 26px; color: #6b7280; font-size: 13px; }
+        .spinner {
+            border: 3px solid #e5e7eb;
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            width: 26px;
+            height: 26px;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 10px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* Stats */
+        .stats-grid { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            padding: 6px 8px;
+            border-radius: 8px;
+            background: #f9fafb;
+        }
+        .stat-label { color: var(--text-muted); }
+        .stat-value { font-weight: 600; }
+        
+        /* Job Requirements Display */
+        .requirements-display {
+            background: #f9fafb;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 12px;
+            font-size: 12px;
+        }
+        .req-section {
+            margin-bottom: 8px;
+        }
+        .req-label {
+            font-weight: 600;
+            color: var(--text-main);
+            margin-bottom: 4px;
+        }
+        .req-value {
+            color: var(--text-muted);
+        }
+        .skill-tag {
+            display: inline-block;
+            background: #dbeafe;
+            color: #1e40af;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin: 2px;
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+<div class="app-shell">
+    <div class="main-column">
+        <!-- Header -->
+        <div class="header">
+            <div>
+                <h1>🤖 AI Recruitment System</h1>
+                <p class="subtitle">Smart Screening with Custom Job Requirements</p>
+            </div>
+            <div class="header-badge">✓ Live & Connected</div>
+        </div>
+
+        <!-- Job Requirements Section -->
+        <div class="card">
+            <div class="card-title">📋 Job Requirements</div>
+            <div class="card-subtitle">Define mandatory criteria and required skills for candidate screening</div>
+            
+            <form id="jobRequirementsForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Notice Period (days)</label>
+                        <input type="number" class="form-input" id="noticePeriod" placeholder="e.g., 30">
+                        <div class="help-text">Maximum acceptable notice period</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Budget (LPA)</label>
+                        <input type="number" class="form-input" id="budget" placeholder="e.g., 15">
+                        <div class="help-text">Maximum salary budget in LPA</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Job Location</label>
+                        <input type="text" class="form-input" id="location" placeholder="e.g., Bangalore">
+                        <div class="help-text">Primary work location</div>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Minimum Experience (years)</label>
+                        <input type="number" class="form-input" id="minExperience" placeholder="e.g., 5">
+                        <div class="help-text">Minimum years of experience required</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Relocation Required?</label>
+                        <select class="form-input" id="relocationRequired">
+                            <option value="false">No</option>
+                            <option value="true">Yes</option>
+                        </select>
+                        <div class="help-text">Is candidate expected to relocate?</div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Required Skills (comma-separated)</label>
+                    <textarea class="form-textarea" id="requiredSkills" placeholder="e.g., Python, PHP, N8N, SQL, TypeScript"></textarea>
+                    <div class="help-text">Candidate must have at least 2 of these skills to be considered</div>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+                    <button type="submit" class="btn btn-success">💾 Save Requirements</button>
+                    <button type="button" class="btn btn-neutral" onclick="loadJobRequirements()">🔄 Reload</button>
+                </div>
+            </form>
+            
+            <div id="requirementsAlert"></div>
+            
+            <!-- Display Current Requirements -->
+            <div id="currentRequirements" style="display: none;">
+                <div class="requirements-display">
+                    <div class="req-section">
+                        <div class="req-label">📌 Mandatory Criteria:</div>
+                        <div class="req-value" id="displayMandatory"></div>
+                    </div>
+                    <div class="req-section">
+                        <div class="req-label">🎯 Required Skills (min 2 matches):</div>
+                        <div id="displaySkills"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Section -->
+        <div class="card">
+            <div class="card-title">📄 Upload Resumes</div>
+            <div class="card-subtitle">Only candidates matching at least 2 required skills will be processed</div>
+            
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📄</div>
+                <div style="font-weight:600; font-size:14px; margin-bottom:4px;">Drop PDF resumes here or click to browse</div>
+                <div style="color:#6b7280; font-size:12px; margin-bottom:12px;">Automatic skill matching and deduplication</div>
+                <button class="btn btn-neutral" onclick="document.getElementById('fileInput').click()">Choose Files</button>
+                <input type="file" id="fileInput" multiple accept=".pdf">
+            </div>
+            <div id="fileList" class="file-list"></div>
+            <div style="margin-top:14px; display:flex; justify-content:flex-end;">
+                <button class="btn btn-success" id="uploadBtn" disabled onclick="uploadFiles()">Upload & Process</button>
+            </div>
+            <div id="uploadAlert"></div>
+        </div>
+
+        <!-- Candidates Section -->
+        <div class="card">
+            <div class="controls">
+                <div>
+                    <div class="card-title">👥 Candidates</div>
+                    <div class="card-subtitle" id="viewLabel">Latest Batch</div>
+                    <div class="view-toggle">
+                        <button class="toggle-btn active" id="btnCurrent" onclick="setView('current')">Latest Batch</button>
+                        <button class="toggle-btn" id="btnAll" onclick="setView('all')">All Candidates</button>
+                    </div>
+                </div>
+                <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                    <button class="btn btn-success" onclick="callAllCandidates()">📞 Call All Pending</button>
+                    <button class="btn btn-neutral" onclick="refreshCandidates()">🔄 Refresh</button>
+                    <button class="btn btn-neutral" onclick="downloadExcel()">📥 Download Excel</button>
+                </div>
+            </div>
+            <div id="candidatesTable">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading candidates...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar Stats -->
+    <div class="sidebar-column">
+        <div class="card">
+            <div class="card-title">📊 Pipeline Stats</div>
+            <div class="card-subtitle">Live from current view</div>
+            <div class="stats-grid">
+                <div class="stat-row">
+                    <span class="stat-label">Total</span>
+                    <span class="stat-value" id="statTotal">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Pending</span>
+                    <span class="stat-value" id="statNew">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Calling</span>
+                    <span class="stat-value" id="statCalling">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Completed</span>
+                    <span class="stat-value" id="statCompleted">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Qualified</span>
+                    <span class="stat-value" id="statQualified">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Rejected</span>
+                    <span class="stat-value" id="statRejected">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Scheduled</span>
+                    <span class="stat-value" id="statScheduled">0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let selectedFiles = [];
+    let currentView = 'current';
+    let currentJobRequirements = null;
+
+    // ==================== JOB REQUIREMENTS ====================
+    
+    // Load job requirements on page load
+    window.addEventListener('DOMContentLoaded', () => {
+        loadJobRequirements();
+    });
+
+    // Handle form submission
+    document.getElementById('jobRequirementsForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await saveJobRequirements();
+    });
+
+    async function saveJobRequirements() {
+        const requirements = {
+            notice_period: parseInt(document.getElementById('noticePeriod').value) || null,
+            budget: parseInt(document.getElementById('budget').value) || null,
+            location: document.getElementById('location').value.trim() || null,
+            min_experience: parseInt(document.getElementById('minExperience').value) || null,
+            relocation_required: document.getElementById('relocationRequired').value === 'true',
+            required_skills: document.getElementById('requiredSkills').value
+                .split(',')
+                .map(s => s.trim())
+                .filter(s => s.length > 0)
+        };
+
+        // Validation
+        if (requirements.required_skills.length === 0) {
+            showAlert('requirementsAlert', 'Please add at least one required skill', 'error');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/job-requirements', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requirements)
+            });
+
+            const result = await res.json();
+
+            if (result.success) {
+                showAlert('requirementsAlert', '✓ Job requirements saved successfully!', 'success');
+                currentJobRequirements = requirements;
+                displayCurrentRequirements();
+            } else {
+                showAlert('requirementsAlert', 'Error: ' + result.error, 'error');
+            }
+        } catch (err) {
+            showAlert('requirementsAlert', 'Error saving requirements: ' + err.message, 'error');
+        }
+    }
+
+    async function loadJobRequirements() {
+        try {
+            const res = await fetch('/api/job-requirements');
+            const result = await res.json();
+
+            if (result.success && result.data) {
+                const req = result.data;
+                currentJobRequirements = req;
+
+                // Populate form
+                document.getElementById('noticePeriod').value = req.notice_period || '';
+                document.getElementById('budget').value = req.budget || '';
+                document.getElementById('location').value = req.location || '';
+                document.getElementById('minExperience').value = req.min_experience || '';
+                document.getElementById('relocationRequired').value = req.relocation_required ? 'true' : 'false';
+                document.getElementById('requiredSkills').value = (req.required_skills || []).join(', ');
+
+                displayCurrentRequirements();
+            } else {
+                document.getElementById('currentRequirements').style.display = 'none';
+            }
+        } catch (err) {
+            console.error('Error loading job requirements:', err);
+        }
+    }
+
+    function displayCurrentRequirements() {
+        if (!currentJobRequirements) {
+            document.getElementById('currentRequirements').style.display = 'none';
+            return;
+        }
+
+        const req = currentJobRequirements;
+        let mandatory = [];
+
+        if (req.notice_period) mandatory.push(`Notice Period ≤ ${req.notice_period} days`);
+        if (req.budget) mandatory.push(`Budget ≤ ${req.budget} LPA`);
+        if (req.location) mandatory.push(`Location: ${req.location}`);
+        if (req.min_experience) mandatory.push(`Experience ≥ ${req.min_experience} years`);
+        if (req.relocation_required) mandatory.push(`Relocation: Required`);
+
+        document.getElementById('displayMandatory').textContent = mandatory.join(' • ') || 'None specified';
+
+        const skillsHtml = (req.required_skills || [])
+            .map(skill => `<span class="skill-tag">${skill}</span>`)
+            .join('');
+        document.getElementById('displaySkills').innerHTML = skillsHtml || '<span class="req-value">None specified</span>';
+
+        document.getElementById('currentRequirements').style.display = 'block';
+    }
+
+    function showAlert(elementId, message, type) {
+        const alertDiv = document.getElementById(elementId);
+        alertDiv.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+        setTimeout(() => alertDiv.innerHTML = '', 5000);
+    }
+
+    // ==================== UPLOAD HANDLING ====================
+    
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const fileList = document.getElementById('fileList');
+    const uploadBtn = document.getElementById('uploadBtn');
+
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.style.background = '#e0e7ff';
+    });
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.style.background = '#f9fafb';
+    });
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.style.background = '#f9fafb';
+        handleFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+    function handleFiles(files) {
+        selectedFiles = Array.from(files).filter(f => f.type === 'application/pdf');
+        displayFileList();
+        uploadBtn.disabled = selectedFiles.length === 0;
+    }
+
+    function displayFileList() {
+        if (selectedFiles.length === 0) {
+            fileList.innerHTML = '';
+            return;
+        }
+        fileList.innerHTML = '<div style="font-size:13px; font-weight:600; margin-bottom:4px;">Selected Files</div>';
+        selectedFiles.forEach((file, i) => {
+            fileList.innerHTML += `
+                <div class="file-item">
+                    <span>📄 ${file.name}</span>
+                    <button class="btn btn-neutral btn-small" onclick="removeFile(${i})">Remove</button>
+                </div>
+            `;
+        });
+    }
+
+    function removeFile(i) {
+        selectedFiles.splice(i, 1);
+        displayFileList();
+        uploadBtn.disabled = selectedFiles.length === 0;
+    }
+
+    async function uploadFiles() {
+        if (selectedFiles.length === 0) return;
+
+        // Check if job requirements are set
+        if (!currentJobRequirements || !currentJobRequirements.required_skills || currentJobRequirements.required_skills.length === 0) {
+            showAlert('uploadAlert', '⚠️ Please set job requirements first (especially required skills)', 'warning');
+            return;
+        }
+
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = 'Processing...';
+
+        const formData = new FormData();
+        selectedFiles.forEach(f => formData.append('resumes', f));
+
+        try {
+            const res = await fetch('/api/upload', { method: 'POST', body: formData });
+            const result = await res.json();
+
+            const alertDiv = document.getElementById('uploadAlert');
+            const { successful, duplicates, failed, skill_mismatches } = result.stats || {};
+            
+            let alertClass = 'alert-success';
+            let message = `✓ Processed: ${successful || 0} added, ${duplicates || 0} duplicates, ${skill_mismatches || 0} skill mismatches, ${failed || 0} failed`;
+            
+            if (skill_mismatches > 0) {
+                alertClass = 'alert-warning';
+                message += `<br><small>Skill mismatches were skipped (didn't match minimum 2 required skills)</small>`;
+            }
+            if (duplicates > 0) {
+                message += `<br><small>Duplicates were skipped (already in database)</small>`;
+            }
+
+            alertDiv.innerHTML = `<div class="alert ${alertClass}">${message}</div>`;
+            setTimeout(() => alertDiv.innerHTML = '', 7000);
+
+            selectedFiles = [];
+            fileList.innerHTML = '';
+            fileInput.value = '';
+            uploadBtn.textContent = 'Upload & Process';
+            uploadBtn.disabled = false;
+            setView('current');
+        } catch (err) {
+            showAlert('uploadAlert', 'Error: ' + err.message, 'error');
+            uploadBtn.textContent = 'Upload & Process';
+            uploadBtn.disabled = false;
+        }
+    }
+
+    // ==================== CANDIDATE TABLE ====================
+    
+    function setView(view) {
+        currentView = view;
+        document.getElementById('btnCurrent').classList.toggle('active', view === 'current');
+        document.getElementById('btnAll').classList.toggle('active', view === 'all');
+        document.getElementById('viewLabel').textContent = view === 'current' ? 'Latest Batch' : 'All Candidates';
+        refreshCandidates();
+    }
+
+    async function refreshCandidates() {
+        const tableDiv = document.getElementById('candidatesTable');
+        tableDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading...</p></div>';
+
+        try {
+            const res = await fetch(`/api/candidates?view=${currentView}`);
+            const candidates = await res.json();
+
+            if (!Array.isArray(candidates) || candidates.length === 0) {
+                tableDiv.innerHTML = '<p style="text-align:center;padding:26px;color:#9ca3af;">No candidates yet</p>';
+                updateStats({ total: 0, new: 0, calling: 0, completed: 0, qualified: 0, rejected: 0, scheduled: 0 });
+                return;
+            }
+
+            // Get stats
+            const statsRes = await fetch(`/api/candidates/stats?view=${currentView}`);
+            const stats = await statsRes.json();
+            updateStats(stats);
+
+            let html = `<div class="table-container"><table>
+                <thead><tr>
+                    <th>Name</th><th>Phone</th><th>Skills</th>
+                    <th>Matched Skills</th><th>Experience</th><th>Notice</th>
+                    <th>Overall Score</th><th>Status</th><th>Action</th>
+                </tr></thead><tbody>`;
+
+            candidates.forEach(c => {
+                const statusClass = 'status-' + (c.status || 'new').toLowerCase().replace(/[^a-z]/g, '');
+                const scoreClass = c.overall_qualification_score >= 70 ? 'score-high' : 
+                                  c.overall_qualification_score >= 45 ? 'score-medium' : 'score-low';
+
+                html += `<tr>
+                    <td><strong>${c.name}</strong></td>
+                    <td style="font-size:11px;">${c.phone}</td>
+                    <td style="max-width:200px;font-size:11px;">${c.skills || '-'}</td>
+                    <td style="font-size:11px;">${c.skills_matched || '-'}</td>
+                    <td>${c.years_of_experience || '-'}</td>
+                    <td>${c.notice_period || '-'}</td>
+                    <td>${c.overall_qualification_score ? `<span class="score ${scoreClass}">${Math.round(c.overall_qualification_score)}%</span>` : '-'}</td>
+                    <td><span class="status-badge ${statusClass}">${c.status || 'New'}</span></td>
+                    <td>
+                        ${c.status === 'New' 
+                            ? `<button class="btn btn-small" onclick="callCandidate(${c.id})">📞 Call</button>` 
+                            : `<button class="btn btn-small" disabled>Called</button>`}
+                    </td>
+                </tr>`;
+            });
+
+            html += '</tbody></table></div>';
+            tableDiv.innerHTML = html;
+
+        } catch (err) {
+            tableDiv.innerHTML = `<p style="color:#b91c1c;text-align:center;padding:20px;">Error: ${err.message}</p>`;
+        }
+    }
+
+    function updateStats(stats) {
+        document.getElementById('statTotal').textContent = stats.total || 0;
+        document.getElementById('statNew').textContent = stats.new || 0;
+        document.getElementById('statCalling').textContent = stats.calling || 0;
+        document.getElementById('statCompleted').textContent = stats.completed || 0;
+        document.getElementById('statQualified').textContent = stats.qualified || 0;
+        document.getElementById('statRejected').textContent = stats.rejected || 0;
+        document.getElementById('statScheduled').textContent = stats.scheduled || 0;
+    }
+
+    async function callCandidate(id) {
+        if (!confirm('Call this candidate?')) return;
+        try {
+            const res = await fetch(`/api/candidates/${id}/call`, { method: 'POST' });
+            const result = await res.json();
+            alert(result.success ? 'Call initiated! System will analyze with custom criteria.' : 'Call failed: ' + result.error);
+            setTimeout(refreshCandidates, 2000);
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    }
+
+    async function callAllCandidates() {
+        if (!confirm('Call all pending candidates?')) return;
+        try {
+            const res = await fetch('/api/candidates/call-all', { method: 'POST' });
+            const result = await res.json();
+            alert(`Calling ${result.count || 0} candidates. Dashboard will auto-update.`);
+            setTimeout(refreshCandidates, 5000);
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    }
+
+    function downloadExcel() {
+        window.location.href = '/api/export/excel';
+    }
+
+    // Initial load
+    setView('current');
+    setInterval(refreshCandidates, 30000); // Auto-refresh every 30 seconds
+</script>
+</body>
+</html>
