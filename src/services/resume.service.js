@@ -2,6 +2,7 @@
 const fs = require('fs').promises;
 const pdfParse = require('pdf-parse');
 const OpenAI = require('openai');
+const JobRequirementsModel = require('../models/jobRequirements.model');
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -28,6 +29,8 @@ class ResumeService {
    */
   static async parseResume(resumeText) {
     try {
+      console.log('Calling OpenAI API for resume parsing...');
+      
       const completion = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
@@ -58,9 +61,13 @@ ${resumeText.substring(0, 4000)}`
       });
 
       const response = completion.choices?.[0]?.message?.content;
+      
       if (!response) {
+        console.error('Empty response from OpenAI');
         throw new Error('Empty response from OpenAI');
       }
+
+      console.log('OpenAI raw response:', response.substring(0, 200));
 
       // Clean response (remove markdown backticks if present)
       const cleaned = response
@@ -68,7 +75,13 @@ ${resumeText.substring(0, 4000)}`
         .replace(/```/g, '')
         .trim();
 
-      const parsed = JSON.parse(cleaned);
+      let parsed;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch (parseError) {
+        console.error('JSON parse error. Response was:', cleaned);
+        throw new Error('Failed to parse OpenAI response as JSON');
+      }
 
       // Validate required fields
       return {
@@ -84,6 +97,12 @@ ${resumeText.substring(0, 4000)}`
     } catch (error) {
       console.error('OpenAI parsing error:', error.message);
       
+      // Log more details for debugging
+      if (error.response) {
+        console.error('OpenAI API Error Status:', error.response.status);
+        console.error('OpenAI API Error Data:', error.response.data);
+      }
+      
       // Return fallback data if OpenAI fails
       return {
         name: 'Not available',
@@ -95,6 +114,114 @@ ${resumeText.substring(0, 4000)}`
         notice_period: 'Not specified'
       };
     }
+  }
+
+  /**
+   * Check if candidate skills match job requirements
+   */
+  static async checkSkillMatch(candidateSkills) {
+    try {
+      // Get current job requirements
+      const requirements = await JobRequirementsModel.getCurrent();
+      
+      if (!requirements || !requirements.required_skills || requirements.required_skills.length === 0) {
+        console.log('No job requirements set - accepting all candidates');
+        return {
+          isMatch: true,
+          matchedSkills: [],
+          matchCount: 0,
+          requiredSkills: [],
+          reason: 'No requirements configured'
+        };
+      }
+
+      // Normalize candidate skills
+      const normalizedCandidateSkills = this.normalizeSkills(candidateSkills);
+      const normalizedRequiredSkills = requirements.required_skills.map(s => s.toLowerCase().trim());
+
+      console.log('Candidate skills (normalized):', normalizedCandidateSkills.slice(0, 10));
+      console.log('Required skills:', normalizedRequiredSkills);
+
+      // Find matches
+      const matchedSkills = [];
+      const minMatches = 2; // Configurable
+
+      for (const requiredSkill of normalizedRequiredSkills) {
+        for (const candidateSkill of normalizedCandidateSkills) {
+          // Check for exact match or partial match
+          if (candidateSkill.includes(requiredSkill) || requiredSkill.includes(candidateSkill)) {
+            // Find original case-sensitive version
+            const originalRequired = requirements.required_skills.find(
+              s => s.toLowerCase().trim() === requiredSkill
+            );
+            if (originalRequired && !matchedSkills.includes(originalRequired)) {
+              matchedSkills.push(originalRequired);
+              break;
+            }
+          }
+        }
+      }
+
+      const isMatch = matchedSkills.length >= minMatches;
+
+      console.log(`Skill match result: ${matchedSkills.length}/${normalizedRequiredSkills.length} skills matched`);
+      console.log(`Matched skills:`, matchedSkills);
+
+      return {
+        isMatch,
+        matchedSkills,
+        matchCount: matchedSkills.length,
+        requiredSkills: requirements.required_skills,
+        reason: isMatch 
+          ? `Matched ${matchedSkills.length} required skills`
+          : `Only ${matchedSkills.length} skills matched (minimum ${minMatches} required)`
+      };
+
+    } catch (error) {
+      console.error('Skill matching error:', error.message);
+      // Fail open - accept candidate if skill matching fails
+      return {
+        isMatch: true,
+        matchedSkills: [],
+        matchCount: 0,
+        requiredSkills: [],
+        reason: 'Skill matching error - accepted by default'
+      };
+    }
+  }
+
+  /**
+   * Normalize skills string to array
+   */
+  static normalizeSkills(skillsString) {
+    if (!skillsString || skillsString === 'Not available') {
+      return [];
+    }
+
+    // Split by common separators
+    const skills = skillsString
+      .split(/[,;|\n]+/)
+      .map(s => s.trim().toLowerCase())
+      .filter(s => s.length > 1);
+
+    return skills;
+  }
+
+  /**
+   * Parse experience string to number
+   */
+  static parseExperience(experienceStr) {
+    if (!experienceStr || experienceStr === 'Not available') {
+      return 0;
+    }
+
+    // Extract first number found
+    const match = experienceStr.match(/(\d+(\.\d+)?)/);
+    if (match) {
+      return parseFloat(match[1]);
+    }
+
+    return 0;
   }
 
   /**

@@ -26,7 +26,7 @@ class WebhookController {
       const data = body.data || body.execution || body.call || body.payload || body;
 
       // ------------------------------------------------------------------
-      // ✅ PROCESS **ONLY FINAL WEBHOOK** — IGNORE ALL INTERMEDIATE EVENTS
+      // ✅ PROCESS **ONLY FINAL WEBHOOK** – IGNORE ALL INTERMEDIATE EVENTS
       // ------------------------------------------------------------------
       const status = data.status || body.status;
 
@@ -104,7 +104,7 @@ class WebhookController {
           data
         );
       } else {
-        console.log("⚠️ Unknown call type — defaulting to screening logic");
+        console.log("⚠️ Unknown call type – defaulting to screening logic");
         await WebhookController.processScreeningWebhook(
           candidate,
           transcriptText,
@@ -119,80 +119,143 @@ class WebhookController {
     }
   }
 
-  // -------------------------------------------------------------------
-  // (No changes below this line — your existing logic stays the same)
-  // -------------------------------------------------------------------
-
+  /**
+   * Process screening webhook with multi-criteria scoring
+   */
   static async processScreeningWebhook(candidate, transcript, webhookData) {
     try {
-      console.log("🤖 Analyzing screening transcript with OpenAI...");
+      console.log("🤖 Analyzing screening transcript with OpenAI (Multi-Criteria Scoring)...");
+      
+      // Analyze with job requirements
       const analysis = await TranscriptService.analyzeScreeningTranscript(
         transcript,
-        candidate.skills
+        candidate.skills,
+        candidate.years_of_experience,
+        candidate.notice_period
       );
 
-      console.log("Analysis results:", {
-        tech_score: analysis.tech_score,
-        job_interest: analysis.job_interest,
-        notice_period: analysis.notice_period,
-        recommendation: analysis.recommendation
-      });
+      console.log("\n========== SCORING BREAKDOWN ==========");
+      console.log(`Notice Period Score: ${analysis.notice_period_score}/20`);
+      console.log(`  → ${analysis.qualification_breakdown?.notice_period?.mentioned || 'Not mentioned'}`);
+      console.log(`Budget Score: ${analysis.budget_score}/20`);
+      console.log(`  → ${analysis.qualification_breakdown?.budget?.expectation || 'Not mentioned'}`);
+      console.log(`Location Score: ${analysis.location_score}/20`);
+      console.log(`  → ${analysis.qualification_breakdown?.location?.preference || 'Not mentioned'}`);
+      console.log(`Experience Score: ${analysis.experience_score}/20`);
+      console.log(`  → ${analysis.qualification_breakdown?.experience?.mentioned || 'Not mentioned'}`);
+      console.log(`Technical Score: ${analysis.technical_score}/40`);
+      console.log(`Communication Score: ${analysis.communication_score}/20 (Confidence: ${analysis.confidence_score}/10)`);
+      console.log(`\n📊 OVERALL QUALIFICATION SCORE: ${analysis.overall_qualification_score}%`);
+      console.log("========================================\n");
 
-      const updates = {
-        call_status: webhookData.smart_status || webhookData.status || "Completed",
+      // Prepare score data for database update
+      const scoreData = {
+        notice_period_score: analysis.notice_period_score,
+        budget_score: analysis.budget_score,
+        location_score: analysis.location_score,
+        experience_score: analysis.experience_score,
+        technical_score: analysis.technical_score,
+        communication_score: analysis.communication_score,
+        overall_qualification_score: analysis.overall_qualification_score,
+        qualification_breakdown: analysis.qualification_breakdown,
         screening_transcript: transcript,
         conversation_summary: analysis.conversation_summary,
+        call_status: webhookData.smart_status || webhookData.status || "Completed",
+        
+        // Legacy fields for backward compatibility
         tech_score: analysis.tech_score,
         job_interest: analysis.job_interest,
-    confidence_score: analysis.confidence_score
+        confidence_score: analysis.confidence_score
       };
 
-      if (analysis.notice_period && analysis.notice_period !== "Not mentioned") {
-        updates.notice_period = analysis.notice_period;
+      // Update notice period if mentioned in call
+      if (analysis.notice_period && analysis.notice_period !== 'Not mentioned') {
+        scoreData.notice_period = analysis.notice_period;
       }
 
-      const threshold = parseInt(process.env.TECH_SCORE_THRESHOLD || 40);
+      // Get threshold from environment (default: 45%)
+      const threshold = parseInt(process.env.QUALIFICATION_SCORE_THRESHOLD || process.env.TECH_SCORE_THRESHOLD || 45);
 
-      if (analysis.tech_score !== null) {
-        if (analysis.tech_score > threshold) {
-          updates.status = "Qualified - Assessment Scheduling Queued";
-          console.log(
-            `✅ Candidate QUALIFIED (score: ${analysis.tech_score} > ${threshold})`
-          );
-
-          SchedulerService.scheduleAssessmentCall(
-            candidate.id,
-            analysis.tech_score,
-            updates.notice_period || candidate.notice_period
-          );
-        } else {
-          updates.status = "Rejected - Low Technical Score";
-          console.log(
-            `❌ Candidate REJECTED (score: ${analysis.tech_score} ≤ ${threshold})`
-          );
+      // Determine status based on overall score
+      if (analysis.overall_qualification_score >= threshold) {
+        scoreData.status = "Qualified - Assessment Scheduling Queued";
+        console.log(`✅ Candidate QUALIFIED (score: ${analysis.overall_qualification_score}% >= ${threshold}%)`);
+        
+        // Log qualification details
+        if (analysis.qualification_breakdown) {
+          const breakdown = analysis.qualification_breakdown;
+          console.log("\n✓ Qualification Details:");
+          if (breakdown.notice_period?.match) console.log(`  ✓ Notice Period: ${breakdown.notice_period.mentioned}`);
+          if (breakdown.budget?.match) console.log(`  ✓ Budget: ${breakdown.budget.expectation}`);
+          if (breakdown.location?.match) console.log(`  ✓ Location: ${breakdown.location.preference}`);
+          if (breakdown.experience?.match) console.log(`  ✓ Experience: ${breakdown.experience.mentioned}`);
+          console.log(`  ✓ Technical: ${analysis.technical_score}/40`);
+          console.log(`  ✓ Communication: ${analysis.communication_score}/20\n`);
         }
+
+        // Update candidate with scores
+        await CandidateModel.updateWithScores(candidate.id, scoreData);
+
+        // Schedule assessment call
+        SchedulerService.scheduleAssessmentCall(
+          candidate.id,
+          analysis.overall_qualification_score,
+          scoreData.notice_period || candidate.notice_period
+        );
+
       } else {
-        updates.status = "Manual Review Required - No Tech Score";
-        console.log("⚠️ No tech score extracted, needs manual review");
+        scoreData.status = "Rejected - Below Qualification Threshold";
+        console.log(`❌ Candidate REJECTED (score: ${analysis.overall_qualification_score}% < ${threshold}%)`);
+        
+        // Log rejection reasons
+        if (analysis.qualification_breakdown) {
+          const breakdown = analysis.qualification_breakdown;
+          console.log("\n✗ Rejection Reasons:");
+          if (!breakdown.notice_period?.match && breakdown.notice_period?.score === 0) {
+            console.log(`  ✗ Notice Period: ${breakdown.notice_period.mentioned} (required: ≤${breakdown.notice_period.required} days)`);
+          }
+          if (!breakdown.budget?.match && breakdown.budget?.score === 0) {
+            console.log(`  ✗ Budget: ${breakdown.budget.expectation} (required: ≤${breakdown.budget.required} LPA)`);
+          }
+          if (!breakdown.location?.match && breakdown.location?.score === 0) {
+            console.log(`  ✗ Location: ${breakdown.location.preference} (required: ${breakdown.location.required})`);
+          }
+          if (!breakdown.experience?.match && breakdown.experience?.score === 0) {
+            console.log(`  ✗ Experience: ${breakdown.experience.mentioned} (required: ≥${breakdown.experience.required} years)`);
+          }
+          if (analysis.technical_score < 20) {
+            console.log(`  ✗ Technical: ${analysis.technical_score}/40 (weak performance)`);
+          }
+          if (analysis.communication_score < 10) {
+            console.log(`  ✗ Communication: ${analysis.communication_score}/20 (poor communication)`);
+          }
+          console.log();
+        }
+
+        // Update candidate with scores
+        await CandidateModel.updateWithScores(candidate.id, scoreData);
       }
 
-      await CandidateModel.update(candidate.id, updates);
-
+      // Log call to call_logs table
       await CallLogModel.create({
         candidate_id: candidate.id,
         call_type: "screening",
         run_id: candidate.screening_run_id,
-        status: updates.call_status,
+        status: scoreData.call_status,
         transcript: transcript
       });
 
       console.log("✓ Screening call webhook processed successfully\n");
+
     } catch (error) {
       console.error("❌ Error processing screening webhook:", error.message);
       throw error;
     }
   }
 
+  /**
+   * Process scheduling webhook (unchanged from original)
+   */
   static async processSchedulingWebhook(candidate, transcript, webhookData) {
     try {
       console.log("🤖 Analyzing scheduling transcript with OpenAI...");
@@ -273,6 +336,9 @@ class WebhookController {
     }
   }
 
+  /**
+   * Get last webhook payload (for debugging)
+   */
   static getLastWebhook(req, res) {
     if (!lastWebhookPayload) {
       return res.json({

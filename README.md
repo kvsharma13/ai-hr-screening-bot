@@ -510,7 +510,6 @@ For issues or questions:
 ---
 
 ---
-
 ## 🎉 You're All Set!
 
 Open `http://localhost:3000` and start recruiting with AI! 🚀

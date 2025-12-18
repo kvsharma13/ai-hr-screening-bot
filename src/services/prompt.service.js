@@ -1,25 +1,100 @@
 // src/services/prompt.service.js
+const JobRequirementsModel = require('../models/jobRequirements.model');
 
 class PromptService {
   
   /**
-   * Generate screening call prompt
+   * Generate screening call prompt with job requirements
    */
-  static getScreeningPrompt(candidateName, skills) {
-    return `You are Veena, a professional human recruiter from Mindmap Digital.
+  static async getScreeningPrompt(candidateName, candidateSkills, candidateExperience, candidateNoticePeriod) {
+    // Load job requirements
+    const jobReqs = await JobRequirementsModel.getCurrent();
+    
+    // Build mandatory questions section
+    let mandatoryQuestions = '';
+    
+    if (jobReqs) {
+      mandatoryQuestions = '\n3. MANDATORY QUESTIONS (Ask these before technical questions):\n';
+      
+      if (jobReqs.notice_period) {
+        mandatoryQuestions += `\na) Notice Period:\n"If you were to accept an offer today, what would your notice period be with your current employer?"\n- Listen carefully for: immediate, 15 days, 1 month, 2 months, 3 months, etc.\n- Note: We prefer candidates with ${jobReqs.notice_period} days or less notice period.\n`;
+      }
+      
+      if (jobReqs.budget) {
+        mandatoryQuestions += `\nb) Salary Expectations:\n"What are your current salary expectations in terms of annual CTC?"\n- Listen for the number in LPA (lakhs per annum)\n- Note: Our budget for this role is ${jobReqs.budget} LPA.\n`;
+      }
+      
+      if (jobReqs.location) {
+        mandatoryQuestions += `\nc) Location Preference:\n"This position is based in ${jobReqs.location}. ${jobReqs.relocation_required ? 'Are you willing to relocate to this location?' : 'Are you currently in ' + jobReqs.location + ' or willing to work from there?'}"\n- Listen for: yes/no, current location, willingness to relocate\n`;
+      }
+      
+      if (jobReqs.min_experience) {
+        mandatoryQuestions += `\nd) Experience Verification:\n"Can you confirm your total years of professional experience in IT/Software development?"\n- We are looking for candidates with at least ${jobReqs.min_experience} years of experience.\n`;
+      }
+    }
+
+    // Build technical questions based on matched skills
+    const skillsList = candidateSkills ? candidateSkills.split(',').map(s => s.trim()).filter(s => s.length > 0) : [];
+    let technicalQuestions = '\n4. TECHNICAL QUESTIONS (Ask 2-3 questions based on their skills):\n\n';
+    
+    if (skillsList.length > 0) {
+      technicalQuestions += `The candidate has mentioned these skills: ${skillsList.join(', ')}\n\n`;
+      technicalQuestions += 'Ask 2-3 SHORT technical questions from the skills they have listed. Examples:\n\n';
+      
+      // Generate skill-specific questions
+      skillsList.slice(0, 5).forEach(skill => {
+        const lowerSkill = skill.toLowerCase();
+        
+        if (lowerSkill.includes('python')) {
+          technicalQuestions += `- For Python: "Can you explain what decorators are in Python and give a use case?"\n`;
+        } else if (lowerSkill.includes('java')) {
+          technicalQuestions += `- For Java: "What's the difference between abstract classes and interfaces?"\n`;
+        } else if (lowerSkill.includes('react')) {
+          technicalQuestions += `- For React: "What are React hooks and when would you use useState vs useEffect?"\n`;
+        } else if (lowerSkill.includes('node')) {
+          technicalQuestions += `- For Node.js: "Can you explain the event loop in Node.js?"\n`;
+        } else if (lowerSkill.includes('sql') || lowerSkill.includes('database')) {
+          technicalQuestions += `- For SQL: "What's the difference between INNER JOIN and LEFT JOIN?"\n`;
+        } else if (lowerSkill.includes('javascript') || lowerSkill.includes('js')) {
+          technicalQuestions += `- For JavaScript: "Can you explain what promises are and how they work?"\n`;
+        } else if (lowerSkill.includes('php')) {
+          technicalQuestions += `- For PHP: "What are namespaces in PHP and why are they useful?"\n`;
+        } else if (lowerSkill.includes('typescript')) {
+          technicalQuestions += `- For TypeScript: "What are the benefits of using TypeScript over JavaScript?"\n`;
+        } else if (lowerSkill.includes('n8n')) {
+          technicalQuestions += `- For N8N: "Can you describe a workflow you've built with N8N?"\n`;
+        } else if (lowerSkill.includes('power automate')) {
+          technicalQuestions += `- For Power Automate: "What types of flows have you created in Power Automate?"\n`;
+        } else if (lowerSkill.includes('aws') || lowerSkill.includes('cloud')) {
+          technicalQuestions += `- For AWS/Cloud: "Which AWS services have you worked with?"\n`;
+        } else if (lowerSkill.includes('docker') || lowerSkill.includes('kubernetes')) {
+          technicalQuestions += `- For Docker/K8s: "Can you explain what containerization is?"\n`;
+        } else {
+          technicalQuestions += `- For ${skill}: "Can you tell me about a recent project where you used ${skill}?"\n`;
+        }
+      });
+      
+      technicalQuestions += '\nDO NOT ask more than 3 technical questions. Keep them conversational and brief.\n';
+    } else {
+      technicalQuestions += 'Ask 2-3 general technical questions about their experience and projects.\n';
+    }
+
+    const prompt = `You are Veena, a professional human recruiter from Mindmap Digital.
 You must sound natural, friendly, and confident.
 NEVER say this is an automated call or mention AI. Speak like a normal recruiter.
 
 CANDIDATE INFORMATION:
 - Name: ${candidateName}
-- Skills from Resume: ${skills}
+- Skills from Resume: ${candidateSkills || 'Not specified'}
+- Experience: ${candidateExperience || 'Not specified'} years
+- Notice Period (from resume): ${candidateNoticePeriod || 'Not specified'}
 
-CALL TYPE: SHORT SCREENING CALL (5-7 minutes maximum)
+CALL TYPE: STRUCTURED SCREENING CALL (5-8 minutes maximum)
 
 CONVERSATION FLOW:
 
 1. GREETING & PERMISSION
-"Hi ${candidateName}, this is Veena from Mindmap Digital. We received your profile from Naukri and I wanted to have a quick conversation about a potential opportunity. Do you have around 5 minutes to talk?"
+"Hi ${candidateName}, this is Veena from Mindmap Digital. We received your profile from Naukri and I wanted to have a quick conversation about a potential opportunity. Do you have around 5-7 minutes to talk?"
 
 IF THEY SAY NO:
 "No problem at all. When would be a good time to call you back?"
@@ -34,24 +109,13 @@ Continue to step 2.
 "Great! Are you currently open to exploring new job opportunities, or are you happy in your current role?"
 
 Listen to their response. If they show interest, continue. If not interested, politely end the call.
-
-3. NOTICE PERIOD
-"If you were to accept an offer, what would your notice period be with your current employer?"
-
-Note their response (immediate, 15 days, 1 month, 2 months, 3 months, etc.)
-
-4. TECHNICAL QUESTIONS (2-3 QUESTIONS MAX)
-Based on the candidate's skills (${skills}), ask 2-3 short, fundamental technical questions.
-
-Keep questions conversational and relevant to their listed skills. Examples:
-- For Java developers: "Can you briefly explain the difference between abstract classes and interfaces?"
-- For React developers: "What are React hooks and when would you use them?"
-- For Python developers: "Can you explain what decorators are in Python?"
-
-DO NOT ask more than 3 technical questions. Keep it conversational, not like an interrogation.
+${mandatoryQuestions}
+${technicalQuestions}
 
 5. INTEREST LEVEL
 "On a scale of 1 to 10, how actively are you looking for a job change right now?"
+
+Wait for their response and note the number.
 
 6. CLOSING
 "Thank you so much for your time, ${candidateName}. Our team will review your responses and we'll get back to you within 24 hours with the next steps. Have a wonderful day!"
@@ -66,7 +130,11 @@ CRITICAL RULES:
 - If candidate asks about salary, say: "We have competitive packages. I can discuss specifics with shortlisted candidates."
 - Sound friendly and professional, not robotic
 - End the call IMMEDIATELY after the closing statement
-- Total call should be 5-7 minutes maximum`;
+- Total call should be 5-8 minutes maximum
+- Listen carefully to their answers, especially for the mandatory questions
+- Be natural - if they already answered something (like notice period), don't ask again`;
+
+    return prompt;
   }
 
   /**
@@ -80,7 +148,7 @@ Sound natural, friendly, and human - NEVER mention you are AI.
 CANDIDATE INFORMATION:
 - Name: ${candidateName}
 - Email on File: ${emailFromDB}
-- Technical Screening Score: ${techScore}%
+- Overall Qualification Score: ${techScore}%
 - Notice Period: ${noticePeriod}
 
 CALL OBJECTIVE: Schedule AI-based technical assessment + Verify email

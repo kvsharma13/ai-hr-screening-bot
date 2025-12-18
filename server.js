@@ -41,18 +41,18 @@ app.use((err, req, res, next) => {
 // ===== START SERVER =====
 app.listen(PORT, () => {
   console.log('\n========================================');
-  console.log('🚀 AI RECRUITMENT SYSTEM STARTED');
+  console.log('ðŸš€ AI RECRUITMENT SYSTEM STARTED');
   console.log('========================================');
   console.log(`Server: http://localhost:${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Database: ${process.env.DB_NAME}@${process.env.DB_HOST}`);
   console.log('========================================');
-  console.log('\n📌 SETUP CHECKLIST:');
-  console.log('1. ✓ Configure Bolna webhook URL: http://your-server/api/webhook/bolna');
-  console.log('2. ✓ Upload resumes via dashboard');
-  console.log('3. ✓ System will auto-call and analyze');
-  console.log('4. ✓ Qualified candidates get auto-scheduled assessment calls');
-  console.log('5. ✓ Assessment links sent via email automatically');
+  console.log('\nðŸ“Œ SETUP CHECKLIST:');
+  console.log('1. âœ“ Configure Bolna webhook URL: http://your-server/api/webhook/bolna');
+  console.log('2. âœ“ Upload resumes via dashboard');
+  console.log('3. âœ“ System will auto-call and analyze');
+  console.log('4. âœ“ Qualified candidates get auto-scheduled assessment calls');
+  console.log('5. âœ“ Assessment links sent via email automatically');
   console.log('\n========================================\n');
 });
 

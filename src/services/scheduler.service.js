@@ -1,19 +1,21 @@
 // src/services/scheduler.service.js
 const CandidateModel = require('../models/candidate.model');
-const BolnaService = require('./bolna.service');
-const PromptService = require('./prompt.service');
-const EmailService = require('./email.service');
+const BolnaService = require('../services/bolna.service');
+const PromptService = require('../services/prompt.service');
+const EmailService = require('../services/email.service');
 const { v4: uuidv4 } = require('uuid');
 
 class SchedulerService {
   
   /**
    * Schedule assessment scheduling call after 2 minutes
+   * Now uses overall_qualification_score instead of tech_score
    */
-  static scheduleAssessmentCall(candidateId, techScore, noticePeriod) {
+  static scheduleAssessmentCall(candidateId, overallScore, noticePeriod) {
     const delayMs = parseInt(process.env.AUTO_SCHEDULE_DELAY_MS || 120000); // 2 minutes
     
     console.log(`⏰ Scheduling assessment call for candidate ${candidateId} in ${delayMs/1000} seconds...`);
+    console.log(`   Overall Qualification Score: ${overallScore}%`);
     
     setTimeout(async () => {
       try {
@@ -30,13 +32,17 @@ class SchedulerService {
           return;
         }
 
+        console.log(`\n========== ASSESSMENT SCHEDULING ==========`);
         console.log(`📞 Initiating assessment scheduling call for ${candidate.name} (ID: ${candidateId})`);
+        console.log(`   Qualification Score: ${overallScore}%`);
+        console.log(`   Notice Period: ${noticePeriod}`);
+        console.log(`==========================================\n`);
 
         // Generate scheduling prompt with email verification
         const prompt = PromptService.getSchedulingPrompt(
           candidate.name,
           candidate.email,
-          techScore,
+          overallScore,
           noticePeriod
         );
 
@@ -91,6 +97,10 @@ class SchedulerService {
       // Generate unique assessment link
       const assessmentLink = this.generateAssessmentLink(candidate.id);
 
+      console.log(`📧 Sending assessment link to: ${emailToSend}`);
+      console.log(`   Date: ${assessmentDate}`);
+      console.log(`   Time: ${assessmentTime}`);
+
       // Send email
       const emailResult = await EmailService.sendAssessmentLink({
         name: candidate.name,
@@ -108,7 +118,7 @@ class SchedulerService {
           status: 'Assessment Link Sent'
         });
 
-        console.log(`✓ Assessment link sent to ${emailToSend}`);
+        console.log(`✓ Assessment link sent successfully to ${emailToSend}`);
         return { success: true, link: assessmentLink };
       } else {
         console.error('❌ Failed to send assessment link:', emailResult.error);
@@ -158,14 +168,20 @@ class SchedulerService {
     try {
       const candidates = await CandidateModel.getNeedingFollowUp();
       
+      console.log(`\n========== FOLLOW-UP CALLS ==========`);
       console.log(`Found ${candidates.length} candidates needing follow-up calls`);
+      console.log(`=====================================\n`);
 
       for (const candidate of candidates) {
         console.log(`Processing follow-up for ${candidate.name}...`);
+        console.log(`  Skills matched: ${candidate.skills_matched}`);
+        console.log(`  Attempt: ${candidate.failed_attempts + 1}`);
         
-        const prompt = PromptService.getScreeningPrompt(
+        const prompt = await PromptService.getScreeningPrompt(
           candidate.name,
-          candidate.skills
+          candidate.skills,
+          candidate.years_of_experience,
+          candidate.notice_period
         );
 
         const callResult = await BolnaService.makeCall(candidate.phone, prompt);
@@ -176,7 +192,7 @@ class SchedulerService {
             call_status: 'Calling - Screening',
             screening_run_id: callResult.run_id
           });
-          console.log(`✓ Follow-up call initiated for ${candidate.name}`);
+          console.log(`  ✓ Follow-up call initiated for ${candidate.name}\n`);
         } else {
           // Increment failed attempts
           const newAttempts = candidate.failed_attempts + 1;
@@ -188,7 +204,7 @@ class SchedulerService {
               call_status: 'Failed - No Response',
               failed_attempts: newAttempts
             });
-            console.log(`❌ Max attempts reached for ${candidate.name}`);
+            console.log(`  ❌ Max attempts reached for ${candidate.name}\n`);
           } else {
             const nextFollowUp = this.calculateFollowUpTime();
             await CandidateModel.update(candidate.id, {
@@ -196,13 +212,15 @@ class SchedulerService {
               follow_up_time: nextFollowUp,
               status: 'Follow-Up Scheduled'
             });
-            console.log(`⏰ Next follow-up scheduled for ${candidate.name}`);
+            console.log(`  ⏰ Next follow-up scheduled for ${candidate.name} at ${nextFollowUp.toISOString()}\n`);
           }
         }
 
         // Wait 3 seconds between calls
         await new Promise(resolve => setTimeout(resolve, 3000));
       }
+
+      console.log(`========== FOLLOW-UP COMPLETE ==========\n`);
 
     } catch (error) {
       console.error('❌ Error processing follow-up calls:', error.message);

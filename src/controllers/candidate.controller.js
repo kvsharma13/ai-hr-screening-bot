@@ -65,6 +65,66 @@ class CandidateController {
   }
 
   /**
+   * Get qualified candidates (NEW)
+   */
+  static async getQualifiedCandidates(req, res) {
+    try {
+      const threshold = parseFloat(req.query.threshold || process.env.QUALIFICATION_SCORE_THRESHOLD || 45);
+      const view = req.query.view || 'current';
+
+      let batchId = null;
+      if (view === 'current') {
+        batchId = await CandidateModel.getLatestBatchId();
+      }
+
+      const candidates = await CandidateModel.getQualified(threshold, batchId);
+
+      res.json({
+        success: true,
+        threshold: threshold,
+        count: candidates.length,
+        candidates: candidates
+      });
+
+    } catch (error) {
+      console.error('Error fetching qualified candidates:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Get score distribution analytics (NEW)
+   */
+  static async getScoreDistribution(req, res) {
+    try {
+      const view = req.query.view || 'current';
+
+      let batchId = null;
+      if (view === 'current') {
+        batchId = await CandidateModel.getLatestBatchId();
+      }
+
+      const distribution = await CandidateModel.getScoreDistribution(batchId);
+
+      res.json({
+        success: true,
+        view: view,
+        distribution: distribution
+      });
+
+    } catch (error) {
+      console.error('Error fetching score distribution:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+
+  /**
    * Call a single candidate
    */
   static async callCandidate(req, res) {
@@ -82,16 +142,26 @@ class CandidateController {
         return res.status(400).json({ error: 'Invalid phone number' });
       }
 
+      // Check if candidate has matched skills
+      if (!candidate.skills_matched || candidate.skills_matched === 'None') {
+        return res.status(400).json({
+          error: 'Cannot call candidate: No skills matched with job requirements',
+          message: 'This candidate does not meet minimum skill requirements (requires at least 2 matching skills)'
+        });
+      }
+
       // Update status to calling
       await CandidateModel.update(candidateId, {
         call_status: 'Calling - Screening',
         status: 'Calling - Screening'
       });
 
-      // Generate screening prompt
-      const prompt = PromptService.getScreeningPrompt(
+      // Generate screening prompt (now async)
+      const prompt = await PromptService.getScreeningPrompt(
         candidate.name,
-        candidate.skills
+        candidate.skills,
+        candidate.years_of_experience,
+        candidate.notice_period
       );
 
       // Make call
@@ -108,7 +178,7 @@ class CandidateController {
 
         return res.json({
           success: true,
-          message: 'Screening call initiated. Webhook will deliver transcript automatically.',
+          message: 'Screening call initiated. Multi-criteria analysis will run automatically via webhook.',
           run_id: callResult.run_id
         });
       } else {
@@ -167,7 +237,9 @@ class CandidateController {
         });
       }
 
+      console.log(`\n========== BULK CALLING ==========`);
       console.log(`Initiating calls for ${candidates.length} pending candidates...`);
+      console.log(`==================================\n`);
 
       const results = [];
 
@@ -177,9 +249,14 @@ class CandidateController {
 
         setTimeout(async () => {
           try {
-            const prompt = PromptService.getScreeningPrompt(
+            console.log(`[${i + 1}/${candidates.length}] Calling ${candidate.name}`);
+            console.log(`  Skills matched: ${candidate.skills_matched}`);
+
+            const prompt = await PromptService.getScreeningPrompt(
               candidate.name,
-              candidate.skills
+              candidate.skills,
+              candidate.years_of_experience,
+              candidate.notice_period
             );
 
             const callResult = await BolnaService.makeCall(candidate.phone, prompt);
@@ -191,7 +268,7 @@ class CandidateController {
                 screening_run_id: callResult.run_id
               });
 
-              console.log(`✓ Call initiated for ${candidate.name}`);
+              console.log(`  ✓ Call initiated (run_id: ${callResult.run_id})\n`);
             } else {
               const newAttempts = (candidate.failed_attempts || 0) + 1;
               const maxAttempts = parseInt(process.env.MAX_CALL_ATTEMPTS || 2);
@@ -202,6 +279,7 @@ class CandidateController {
                   call_status: 'Failed - No Response',
                   failed_attempts: newAttempts
                 });
+                console.log(`  ❌ Max attempts reached\n`);
               } else {
                 const followUpTime = SchedulerService.calculateFollowUpTime();
                 await CandidateModel.update(candidate.id, {
@@ -210,16 +288,18 @@ class CandidateController {
                   failed_attempts: newAttempts,
                   follow_up_time: followUpTime
                 });
+                console.log(`  ⏰ Follow-up scheduled\n`);
               }
             }
           } catch (error) {
-            console.error(`Error calling ${candidate.name}:`, error.message);
+            console.error(`  ❌ Error calling ${candidate.name}:`, error.message, '\n');
           }
         }, i * 3000); // 3 second delay between calls
 
         results.push({
           name: candidate.name,
           phone: candidate.phone,
+          skills_matched: candidate.skills_matched,
           status: 'Queued for calling'
         });
       }

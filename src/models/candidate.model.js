@@ -14,9 +14,9 @@ class CandidateModel {
   static async create(candidateData) {
     const query = `
       INSERT INTO candidates (
-        name, phone, email, skills, years_of_experience, 
+        name, phone, email, skills, skills_matched, years_of_experience, 
         current_company, notice_period, batch_id, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *
     `;
     
@@ -25,6 +25,7 @@ class CandidateModel {
       candidateData.phone,
       candidateData.email,
       candidateData.skills,
+      candidateData.skills_matched || null,
       candidateData.years_of_experience,
       candidateData.current_company,
       candidateData.notice_period,
@@ -52,6 +53,12 @@ class CandidateModel {
     if (filters.status) {
       conditions.push(`status = $${paramCount}`);
       values.push(filters.status);
+      paramCount++;
+    }
+
+    if (filters.min_score !== undefined) {
+      conditions.push(`overall_qualification_score >= $${paramCount}`);
+      values.push(filters.min_score);
       paramCount++;
     }
 
@@ -132,16 +139,75 @@ class CandidateModel {
     return result.rows[0];
   }
 
-  // Get pending candidates (for calling)
+  // Update candidate with scoring breakdown
+  static async updateWithScores(id, scoreData) {
+    const query = `
+      UPDATE candidates
+      SET
+        notice_period_score = $2,
+        budget_score = $3,
+        location_score = $4,
+        experience_score = $5,
+        technical_score = $6,
+        communication_score = $7,
+        overall_qualification_score = $8,
+        qualification_breakdown = $9,
+        screening_transcript = $10,
+        conversation_summary = $11,
+        status = $12,
+        call_status = $13,
+        tech_score = $14,
+        job_interest = $15,
+        confidence_score = $16
+      WHERE id = $1
+      RETURNING *
+    `;
+
+    const values = [
+      id,
+      scoreData.notice_period_score || 0,
+      scoreData.budget_score || 0,
+      scoreData.location_score || 0,
+      scoreData.experience_score || 0,
+      scoreData.technical_score || 0,
+      scoreData.communication_score || 0,
+      scoreData.overall_qualification_score || 0,
+      JSON.stringify(scoreData.qualification_breakdown || {}),
+      scoreData.screening_transcript || null,
+      scoreData.conversation_summary || null,
+      scoreData.status || 'Completed',
+      scoreData.call_status || 'Completed',
+      scoreData.tech_score || null,
+      scoreData.job_interest || null,
+      scoreData.confidence_score || null
+    ];
+
+    const result = await pool.query(query, values);
+    return result.rows[0];
+  }
+
+  // Get pending candidates (for calling) - only those with matched skills
   static async getPending() {
     const query = `
       SELECT * FROM candidates 
       WHERE status = 'New' 
       AND phone IS NOT NULL 
       AND phone != 'Not available'
+      AND (skills_matched IS NOT NULL OR skills_matched != '')
       ORDER BY created_at ASC
     `;
     const result = await pool.query(query);
+    return result.rows;
+  }
+
+  // Get qualified candidates (overall score >= threshold)
+  static async getQualified(threshold = 45) {
+    const query = `
+      SELECT * FROM candidates 
+      WHERE overall_qualification_score >= $1
+      ORDER BY overall_qualification_score DESC, created_at DESC
+    `;
+    const result = await pool.query(query, [threshold]);
     return result.rows;
   }
 
@@ -176,7 +242,8 @@ class CandidateModel {
       qualified: 0,
       rejected: 0,
       scheduled: 0,
-      failed: 0
+      failed: 0,
+      skill_mismatch: 0
     };
 
     result.rows.forEach(row => {
@@ -189,12 +256,47 @@ class CandidateModel {
       else if (status.includes('qualified')) stats.qualified += parseInt(row.count);
       else if (status.includes('rejected')) stats.rejected += parseInt(row.count);
       else if (status.includes('scheduled')) stats.scheduled += parseInt(row.count);
+      else if (status.includes('skill') && status.includes('mismatch')) {
+        stats.skill_mismatch += parseInt(row.count);
+      }
       else if (status.includes('failed') || status.includes('no response')) {
         stats.failed += parseInt(row.count);
       }
     });
 
     return stats;
+  }
+
+  // Get score distribution
+  static async getScoreDistribution(batchId = null) {
+    const query = batchId
+      ? `
+        SELECT 
+          COUNT(*) as total,
+          COUNT(CASE WHEN overall_qualification_score >= 70 THEN 1 END) as high_scorers,
+          COUNT(CASE WHEN overall_qualification_score >= 45 AND overall_qualification_score < 70 THEN 1 END) as medium_scorers,
+          COUNT(CASE WHEN overall_qualification_score < 45 AND overall_qualification_score IS NOT NULL THEN 1 END) as low_scorers,
+          AVG(overall_qualification_score) as avg_score,
+          MAX(overall_qualification_score) as max_score,
+          MIN(overall_qualification_score) as min_score
+        FROM candidates
+        WHERE batch_id = $1
+      `
+      : `
+        SELECT 
+          COUNT(*) as total,
+          COUNT(CASE WHEN overall_qualification_score >= 70 THEN 1 END) as high_scorers,
+          COUNT(CASE WHEN overall_qualification_score >= 45 AND overall_qualification_score < 70 THEN 1 END) as medium_scorers,
+          COUNT(CASE WHEN overall_qualification_score < 45 AND overall_qualification_score IS NOT NULL THEN 1 END) as low_scorers,
+          AVG(overall_qualification_score) as avg_score,
+          MAX(overall_qualification_score) as max_score,
+          MIN(overall_qualification_score) as min_score
+        FROM candidates
+      `;
+
+    const values = batchId ? [batchId] : [];
+    const result = await pool.query(query, values);
+    return result.rows[0];
   }
 
   // Delete candidate (for testing)
