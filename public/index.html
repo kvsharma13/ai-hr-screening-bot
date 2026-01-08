@@ -3,71 +3,284 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Recruitment System - Mindmap Digital</title>
+    <title>AI Recruitment System v2.0 - Complete</title>
     <style>
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,sans-serif; background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); min-height:100vh; padding:20px; }
-        .container { max-width:1400px; margin:0 auto; }
-        .header { background:white; padding:20px 30px; border-radius:12px; margin-bottom:20px; box-shadow:0 4px 6px rgba(0,0,0,0.1); display:flex; justify-content:space-between; align-items:center; }
-        .logo { font-size:24px; font-weight:700; background:linear-gradient(135deg,#667eea,#764ba2); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
-        .card { background:white; border-radius:12px; padding:24px; margin-bottom:20px; box-shadow:0 4px 6px rgba(0,0,0,0.1); }
-        .card-title { font-size:18px; font-weight:600; color:#1f2937; margin-bottom:6px; }
-        .card-subtitle { font-size:13px; color:#6b7280; margin-bottom:16px; }
-        .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:14px; margin-bottom:20px; }
-        .form-group { display:flex; flex-direction:column; }
-        .form-label { font-size:13px; font-weight:500; color:#374151; margin-bottom:6px; }
-        .form-input { padding:10px 12px; border:1.5px solid #d1d5db; border-radius:6px; font-size:14px; transition:all 0.2s; }
-        .form-input:focus { outline:none; border-color:#667eea; box-shadow:0 0 0 3px rgba(102,126,234,0.1); }
-        .upload-area { border:2px dashed #d1d5db; border-radius:8px; padding:30px; text-align:center; cursor:pointer; transition:all 0.3s; margin-top:16px; }
-        .upload-area:hover { border-color:#667eea; background:#f9fafb; }
-        .upload-area.drag-over { border-color:#667eea; background:#eef2ff; }
-        .upload-icon { font-size:48px; margin-bottom:12px; }
-        #fileInput { display:none; }
-        .file-list { margin-top:12px; }
-        .file-item { background:#f3f4f6; padding:10px 14px; border-radius:6px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; font-size:13px; }
-        .file-remove { color:#ef4444; cursor:pointer; font-weight:600; }
-        .btn { padding:10px 20px; border:none; border-radius:6px; font-size:14px; font-weight:500; cursor:pointer; transition:all 0.2s; }
-        .btn:disabled { opacity:0.5; cursor:not-allowed; }
-        .btn-success { background:#10b981; color:white; }
-        .btn-success:hover:not(:disabled) { background:#059669; }
-        .btn-warning { background:#f59e0b; color:white; }
-        .btn-warning:hover:not(:disabled) { background:#d97706; }
-        .btn-neutral { background:#6b7280; color:white; }
-        .btn-neutral:hover:not(:disabled) { background:#4b5563; }
-        .btn-primary { background:#667eea; color:white; }
-        .btn-primary:hover:not(:disabled) { background:#5568d3; }
-        .controls { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; flex-wrap:wrap; gap:12px; }
-        .view-toggle { display:flex; gap:6px; margin-top:10px; }
-        .toggle-btn { padding:6px 14px; border:1.5px solid #d1d5db; background:white; border-radius:6px; font-size:13px; cursor:pointer; transition:all 0.2s; }
-        .toggle-btn.active { background:#667eea; color:white; border-color:#667eea; }
-        table { width:100%; border-collapse:collapse; font-size:13px; }
-        th { background:#f9fafb; padding:12px; text-align:left; font-weight:600; color:#374151; border-bottom:2px solid #e5e7eb; }
-        td { padding:10px 12px; border-bottom:1px solid #e5e7eb; }
-        tr:hover { background:#f9fafb; }
-        .badge { padding:4px 10px; border-radius:12px; font-size:11px; font-weight:600; display:inline-block; }
-        .badge-success { background:#d1fae5; color:#065f46; }
-        .badge-warning { background:#fef3c7; color:#92400e; }
-        .badge-error { background:#fee2e2; color:#991b1b; }
-        .badge-info { background:#dbeafe; color:#1e40af; }
-        .badge-neutral { background:#f3f4f6; color:#1f2937; }
-        .alert { padding:12px 16px; border-radius:6px; margin-top:12px; font-size:13px; }
-        .alert-success { background:#d1fae5; color:#065f46; border-left:4px solid #10b981; }
-        .alert-error { background:#fee2e2; color:#991b1b; border-left:4px solid #ef4444; }
-        .alert-warning { background:#fef3c7; color:#92400e; border-left:4px solid #f59e0b; }
-        .score { font-weight:600; padding:4px 8px; border-radius:4px; }
-        .score-high { background:#d1fae5; color:#065f46; }
-        .score-medium { background:#fef3c7; color:#92400e; }
-        .score-low { background:#fee2e2; color:#991b1b; }
+        :root {
+            --bg-body: #f3f4f6;
+            --bg-card: #ffffff;
+            --border-subtle: #e5e7eb;
+            --text-main: #111827;
+            --text-muted: #6b7280;
+            --primary: #2563eb;
+            --primary-soft: #dbeafe;
+            --primary-strong: #1d4ed8;
+            --success: #16a34a;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --shadow-soft: 0 10px 30px rgba(15, 23, 42, 0.07);
+            --radius-lg: 16px;
+            --radius-pill: 999px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: var(--bg-body);
+            color: var(--text-main);
+            min-height: 100vh;
+        }
+        .app-shell {
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 24px 16px 40px;
+            display: flex;
+            gap: 20px;
+        }
+        .main-column { flex: 1; min-width: 0; }
+        .sidebar-column {
+            width: 260px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 20px;
+            height: fit-content;
+        }
+        @media (max-width: 960px) {
+            .app-shell { flex-direction: column; }
+            .sidebar-column { width: 100%; position: static; order: -1; }
+        }
+        .header {
+            background: var(--bg-card);
+            padding: 20px 24px;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-soft);
+            border: 1px solid var(--border-subtle);
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+        }
+        h1 { font-size: 22px; font-weight: 700; }
+        .subtitle { color: var(--text-muted); font-size: 13px; margin-top: 4px; }
+        .header-badge {
+            padding: 6px 12px;
+            border-radius: var(--radius-pill);
+            background: #ecfdf3;
+            color: #166534;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .card {
+            background: var(--bg-card);
+            padding: 20px 24px;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-soft);
+            border: 1px solid var(--border-subtle);
+            margin-bottom: 20px;
+        }
+        .card-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+        .card-subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+        
+        /* Form Styles */
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        .form-label {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: var(--text-main);
+        }
+        .form-input {
+            padding: 8px 12px;
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px var(--primary-soft);
+        }
+        
+        .upload-area {
+            border: 1.5px dashed #cbd5e1;
+            border-radius: 12px;
+            padding: 26px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #f9fafb;
+        }
+        .upload-area:hover { background: #eef2ff; border-color: var(--primary); }
+        #fileInput { display: none; }
+        .upload-icon { font-size: 32px; margin-bottom: 8px; }
+        .file-list { margin-top: 12px; }
+        .file-item {
+            background: #f9fafb;
+            padding: 8px 10px;
+            border-radius: 8px;
+            margin: 4px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+        .btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 8px 18px;
+            border-radius: var(--radius-pill);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+            margin: 3px;
+        }
+        .btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.2);
+            background: var(--primary-strong);
+        }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-success { background: var(--success); }
+        .btn-neutral { background: #e5e7eb; color: #111827; }
+        .btn-warning { background: var(--warning); }
+        .btn-danger { background: var(--danger); }
+        
+        .alert {
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-top: 12px;
+            font-size: 12px;
+        }
+        .alert-success { background: #ecfdf3; border: 1px solid #bbf7d0; color: #166534; }
+        .alert-error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+        .alert-warning { background: #fef3c7; border: 1px solid #fde68a; color: #92400e; }
+        
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .view-toggle {
+            display: inline-flex;
+            background: #f3f4ff;
+            border-radius: var(--radius-pill);
+            padding: 2px;
+        }
+        .toggle-btn {
+            border: none;
+            padding: 6px 10px;
+            border-radius: var(--radius-pill);
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            background: transparent;
+            color: #4b5563;
+            transition: all 0.15s;
+        }
+        .toggle-btn.active {
+            background: #ffffff;
+            color: var(--primary-strong);
+            box-shadow: 0 2px 6px rgba(37, 99, 235, 0.18);
+        }
+        
+        .table-container { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border-subtle); }
+        table { width: 100%; border-collapse: collapse; background: white; }
+        thead { background: #f9fafb; }
+        th, td {
+            padding: 9px 10px;
+            text-align: left;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 12px;
+        }
+        th {
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #6b7280;
+        }
+        tbody tr:hover { background: #f9fafb; }
+        
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            border-radius: var(--radius-pill);
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .status-new { background: #e0f2fe; color: #1d4ed8; }
+        .status-calling { background: #fef3c7; color: #92400e; }
+        .status-completed { background: #dcfce7; color: #166534; }
+        .status-qualified { background: #dcfce7; color: #166534; }
+        .status-rejected { background: #fee2e2; color: #b91c1c; }
+        .status-scheduled { background: #e0e7ff; color: #4c1d95; }
+        .status-callback { background: #fef3c7; color: #92400e; }
+        
+        .score-display {
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            display: inline-block;
+        }
+        .score-high { background: #dcfce7; color: #166534; }
+        .score-medium { background: #fef3c7; color: #92400e; }
+        .score-low { background: #fee2e2; color: #b91c1c; }
+        
+        .loading { text-align: center; padding: 26px; color: #6b7280; font-size: 13px; }
+        .spinner {
+            border: 3px solid #e5e7eb;
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            width: 26px;
+            height: 26px;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 10px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .stats-grid { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            padding: 6px 8px;
+            border-radius: 8px;
+            background: #f9fafb;
+        }
+        .stat-label { color: var(--text-muted); }
+        .stat-value { font-weight: 600; }
     </style>
 </head>
 <body>
-    <div class="container">
+<div class="app-shell">
+    <div class="main-column">
+        <!-- Header -->
         <div class="header">
-            <div class="logo">🤖 AI Recruitment System</div>
-            <div style="color:#6b7280; font-size:13px;">Mindmap Digital - Automated Candidate Screening</div>
+            <div>
+                <h1>🤖 AI Recruitment System</h1>
+            </div>
+            <div class="header-badge">✓ Complete System</div>
         </div>
 
-        <!-- Upload Section -->
+        <!-- Upload Section with Job Requirements -->
         <div class="card">
             <div class="card-title">📄 Upload Resumes with Job Requirements</div>
             <div class="card-subtitle">Define job criteria for automatic candidate filtering and scoring</div>
@@ -87,26 +300,24 @@
                     <input type="text" class="form-input" id="required_notice_period" placeholder="e.g., 30 days, 2 months">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Budget (LPA)</label>
-                    <input type="number" class="form-input" id="budget_lpa" placeholder="e.g., 8" step="0.5">
+                    <label class="form-label">Budget Min (LPA)</label>
+                    <input type="number" class="form-input" id="budget_min_lpa" placeholder="e.g., 5" step="0.5">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Experience (Years)</label>
-                    <input type="number" class="form-input" id="experience_years" placeholder="e.g., 3" step="0.5">
+                    <label class="form-label">Budget Max (LPA)</label>
+                    <input type="number" class="form-input" id="budget_max_lpa" placeholder="e.g., 8" step="0.5">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Location</label>
                     <input type="text" class="form-input" id="location" placeholder="e.g., Bangalore, Remote">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Employment Cooling Period (Months)</label>
-                    <input type="number" class="form-input" id="employment_cooling_period" placeholder="e.g., 12" min="0">
-                    <small style="color:#6b7280; font-size:11px; margin-top:4px;">Months since they left target company</small>
+                    <label class="form-label">Min Experience (Years)</label>
+                    <input type="number" class="form-input" id="min_experience" placeholder="e.g., 2" step="0.5">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Interview Cooling Period (Months)</label>
-                    <input type="number" class="form-input" id="interview_cooling_period" placeholder="e.g., 6" min="0">
-                    <small style="color:#6b7280; font-size:11px; margin-top:4px;">Months since they interviewed at target company</small>
+                    <label class="form-label">Max Experience (Years)</label>
+                    <input type="number" class="form-input" id="max_experience" placeholder="e.g., 5" step="0.5">
                 </div>
                 <div class="form-group" style="grid-column: 1 / -1;">
                     <label class="form-label">Required Skills (comma-separated, min 2 must match)</label>
@@ -144,292 +355,296 @@
                     <button class="btn btn-success" onclick="callAllCandidates()">📞 Call All Pending</button>
                     <button class="btn btn-warning" onclick="processCallbacks()">🔄 Process Callbacks</button>
                     <button class="btn btn-neutral" onclick="refreshCandidates()">🔄 Refresh</button>
-                    <button class="btn btn-primary" onclick="downloadQualifiedExcel()">⭐ Download Qualified</button>
-                    <button class="btn btn-neutral" onclick="downloadExcel()">📥 Download All</button>
+                    <button class="btn btn-neutral" onclick="downloadExcel()">📥 Download Excel</button>
                 </div>
             </div>
-            <div id="candidates"></div>
+            <div id="candidatesTable">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading candidates...</p>
+                </div>
+            </div>
         </div>
     </div>
 
-    <script>
-        let selectedFiles = [];
-        let currentView = 'current';
-        let currentBatchId = null;
+    <!-- Sidebar Stats -->
+    <div class="sidebar-column">
+        <div class="card">
+            <div class="card-title">📊 Stats</div>
+            <div class="card-subtitle">Live from current view</div>
+            <div class="stats-grid">
+                <div class="stat-row">
+                    <span class="stat-label">Total</span>
+                    <span class="stat-value" id="statTotal">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Pending</span>
+                    <span class="stat-value" id="statNew">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Calling</span>
+                    <span class="stat-value" id="statCalling">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Qualified (≥45%)</span>
+                    <span class="stat-value" id="statQualified">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Rejected (<45%)</span>
+                    <span class="stat-value" id="statRejected">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Assessment Scheduled</span>
+                    <span class="stat-value" id="statScheduled">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Callbacks Pending</span>
+                    <span class="stat-value" id="statCallback">0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
-        // File upload handling
-        const uploadArea = document.getElementById('uploadArea');
-        const fileInput = document.getElementById('fileInput');
-        const fileList = document.getElementById('fileList');
-        const uploadBtn = document.getElementById('uploadBtn');
+<script>
+    let selectedFiles = [];
+    let currentView = 'current';
 
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            uploadArea.addEventListener(eventName, preventDefaults, false);
-        });
+    // Upload handling
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const fileList = document.getElementById('fileList');
+    const uploadBtn = document.getElementById('uploadBtn');
 
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.style.background = '#e0e7ff';
+    });
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.style.background = '#f9fafb';
+    });
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.style.background = '#f9fafb';
+        handleFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+    function handleFiles(files) {
+        selectedFiles = Array.from(files).filter(f => f.type === 'application/pdf');
+        displayFileList();
+        uploadBtn.disabled = selectedFiles.length === 0;
+    }
+
+    function displayFileList() {
+        if (selectedFiles.length === 0) {
+            fileList.innerHTML = '';
+            return;
         }
-
-        ['dragenter', 'dragover'].forEach(eventName => {
-            uploadArea.addEventListener(eventName, () => uploadArea.classList.add('drag-over'), false);
-        });
-
-        ['dragleave', 'drop'].forEach(eventName => {
-            uploadArea.addEventListener(eventName, () => uploadArea.classList.remove('drag-over'), false);
-        });
-
-        uploadArea.addEventListener('drop', (e) => {
-            const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
-            handleFiles(files);
-        });
-
-        fileInput.addEventListener('change', (e) => {
-            handleFiles(Array.from(e.target.files));
-        });
-
-        function handleFiles(files) {
-            selectedFiles = [...selectedFiles, ...files];
-            renderFileList();
-            uploadBtn.disabled = selectedFiles.length === 0;
-        }
-
-        function renderFileList() {
-            fileList.innerHTML = selectedFiles.map((file, idx) => `
+        fileList.innerHTML = '<div style="font-size:13px; font-weight:600; margin-bottom:4px;">Selected Files</div>';
+        selectedFiles.forEach((file, i) => {
+            fileList.innerHTML += `
                 <div class="file-item">
                     <span>📄 ${file.name}</span>
-                    <span class="file-remove" onclick="removeFile(${idx})">Remove</span>
+                    <button class="btn btn-neutral" style="padding:4px 10px;" onclick="removeFile(${i})">Remove</button>
                 </div>
-            `).join('');
-        }
+            `;
+        });
+    }
 
-        function removeFile(idx) {
-            selectedFiles.splice(idx, 1);
-            renderFileList();
-            uploadBtn.disabled = selectedFiles.length === 0;
-        }
+    function removeFile(i) {
+        selectedFiles.splice(i, 1);
+        displayFileList();
+        uploadBtn.disabled = selectedFiles.length === 0;
+    }
 
-        async function uploadFiles() {
-            if (selectedFiles.length === 0) return;
+    async function uploadFiles() {
+        if (selectedFiles.length === 0) return;
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = 'Processing...';
 
-            uploadBtn.textContent = 'Processing...';
-            uploadBtn.disabled = true;
+        const formData = new FormData();
+        selectedFiles.forEach(f => formData.append('resumes', f));
+        
+        // Add job requirements to formData
+        formData.append('company', document.getElementById('company').value);
+        formData.append('job_role', document.getElementById('job_role').value);
+        formData.append('required_notice_period', document.getElementById('required_notice_period').value);
+        formData.append('budget_min_lpa', document.getElementById('budget_min_lpa').value);
+        formData.append('budget_max_lpa', document.getElementById('budget_max_lpa').value);
+        formData.append('location', document.getElementById('location').value);
+        formData.append('min_experience', document.getElementById('min_experience').value);
+        formData.append('max_experience', document.getElementById('max_experience').value);
+        formData.append('required_skills', document.getElementById('required_skills').value);
 
-            const formData = new FormData();
-            selectedFiles.forEach(file => formData.append('resumes', file));
+        try {
+            const res = await fetch('/api/upload', { method: 'POST', body: formData });
+            const result = await res.json();
+
+            const alertDiv = document.getElementById('uploadAlert');
+            const { successful, duplicates, failed, skills_mismatch } = result.stats || {};
             
-            // Add job requirements
-            formData.append('company', document.getElementById('company').value);
-            formData.append('job_role', document.getElementById('job_role').value);
-            formData.append('required_notice_period', document.getElementById('required_notice_period').value);
-            formData.append('budget_lpa', document.getElementById('budget_lpa').value);
-            formData.append('experience_years', document.getElementById('experience_years').value);
-            formData.append('location', document.getElementById('location').value);
-            formData.append('employment_cooling_period_months', document.getElementById('employment_cooling_period').value || '0');
-            formData.append('interview_cooling_period_months', document.getElementById('interview_cooling_period').value || '0');
-            formData.append('required_skills', document.getElementById('required_skills').value);
-
-            try {
-                const res = await fetch('/api/upload', { method: 'POST', body: formData });
-                const result = await res.json();
-
-                const alertDiv = document.getElementById('uploadAlert');
-                const { successful, duplicates, failed, skills_mismatch } = result.stats || {};
-                
-                let alertClass = 'alert-success';
-                let message = `✓ Processed: ${successful || 0} added, ${duplicates || 0} duplicates, ${skills_mismatch || 0} skills mismatch, ${failed || 0} failed`;
-                
-                if (skills_mismatch > 0) {
-                    alertClass = 'alert-warning';
-                    message += `<br><small>Skills mismatch candidates were filtered out (need 2+ matching skills)</small>`;
-                }
-
-                alertDiv.innerHTML = `<div class="alert ${alertClass}">${message}</div>`;
-                setTimeout(() => alertDiv.innerHTML = '', 7000);
-
-                // Clear form
-                selectedFiles = [];
-                fileList.innerHTML = '';
-                fileInput.value = '';
-                document.getElementById('company').value = '';
-                document.getElementById('job_role').value = '';
-                document.getElementById('required_notice_period').value = '';
-                document.getElementById('budget_lpa').value = '';
-                document.getElementById('experience_years').value = '';
-                document.getElementById('location').value = '';
-                document.getElementById('employment_cooling_period').value = '';
-                document.getElementById('interview_cooling_period').value = '';
-                document.getElementById('required_skills').value = '';
-                
-                uploadBtn.textContent = 'Upload & Process';
-                uploadBtn.disabled = false;
-                setView('current');
-            } catch (err) {
-                document.getElementById('uploadAlert').innerHTML = `<div class="alert alert-error">Error: ${err.message}</div>`;
-                uploadBtn.textContent = 'Upload & Process';
-                uploadBtn.disabled = false;
+            let alertClass = 'alert-success';
+            let message = `✓ Processed: ${successful || 0} added, ${duplicates || 0} duplicates, ${skills_mismatch || 0} skills mismatch, ${failed || 0} failed`;
+            
+            if (skills_mismatch > 0) {
+                alertClass = 'alert-warning';
+                message += `<br><small>Skills mismatch candidates were filtered out (need 2+ matching skills)</small>`;
             }
-        }
 
-        function setView(view) {
-            currentView = view;
-            document.getElementById('btnCurrent').classList.toggle('active', view === 'current');
-            document.getElementById('btnAll').classList.toggle('active', view === 'all');
-            document.getElementById('viewLabel').textContent = view === 'current' ? 'Latest Batch' : 'All Candidates';
-            refreshCandidates();
-        }
+            alertDiv.innerHTML = `<div class="alert ${alertClass}">${message}</div>`;
+            setTimeout(() => alertDiv.innerHTML = '', 7000);
 
-        async function refreshCandidates() {
-            const endpoint = currentView === 'current' ? '/api/candidates/latest-batch' : '/api/candidates';
-            const res = await fetch(endpoint);
-            const data = await res.json();
+            // Clear form
+            selectedFiles = [];
+            fileList.innerHTML = '';
+            fileInput.value = '';
+            document.getElementById('company').value = '';
+            document.getElementById('job_role').value = '';
+            document.getElementById('required_notice_period').value = '';
+            document.getElementById('budget_min_lpa').value = '';
+            document.getElementById('budget_max_lpa').value = '';
+            document.getElementById('location').value = '';
+            document.getElementById('min_experience').value = '';
+            document.getElementById('max_experience').value = '';
+            document.getElementById('required_skills').value = '';
             
-            if (currentView === 'current') {
-                currentBatchId = data.batch_id;
-            }
-            
-            renderCandidates(data.candidates || data);
+            uploadBtn.textContent = 'Upload & Process';
+            uploadBtn.disabled = false;
+            setView('current');
+        } catch (err) {
+            document.getElementById('uploadAlert').innerHTML = `<div class="alert alert-error">Error: ${err.message}</div>`;
+            uploadBtn.textContent = 'Upload & Process';
+            uploadBtn.disabled = false;
         }
+    }
 
-        function renderCandidates(candidates) {
-            const container = document.getElementById('candidates');
-            
-            if (!candidates || candidates.length === 0) {
-                container.innerHTML = '<div style="text-align:center; padding:40px; color:#6b7280;">No candidates found</div>';
+    function setView(view) {
+        currentView = view;
+        document.getElementById('btnCurrent').classList.toggle('active', view === 'current');
+        document.getElementById('btnAll').classList.toggle('active', view === 'all');
+        document.getElementById('viewLabel').textContent = view === 'current' ? 'Latest Batch' : 'All Candidates';
+        refreshCandidates();
+    }
+
+    async function refreshCandidates() {
+        const tableDiv = document.getElementById('candidatesTable');
+        tableDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading...</p></div>';
+
+        try {
+            const res = await fetch(`/api/candidates?view=${currentView}`);
+            const candidates = await res.json();
+
+            if (!Array.isArray(candidates) || candidates.length === 0) {
+                tableDiv.innerHTML = '<p style="text-align:center;padding:26px;color:#9ca3af;">No candidates yet</p>';
+                updateStats({ total: 0, new: 0, calling: 0, qualified: 0, rejected: 0, scheduled: 0, callback_pending: 0 });
                 return;
             }
 
-            const html = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Phone</th>
-                            <th>Skills</th>
-                            <th>Experience</th>
-                            <th>Target Company</th>
-                            <th>Status</th>
-                            <th>Call Status</th>
-                            <th>Score</th>
-                            <th>Callback</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${candidates.map(c => `
-                            <tr>
-                                <td style="font-weight:500;">${c.name}</td>
-                                <td>${c.phone}</td>
-                                <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis;">${c.skills || '-'}</td>
-                                <td>${c.years_of_experience || '-'}</td>
-                                <td>${c.target_company || '-'}</td>
-                                <td><span class="badge badge-${getStatusClass(c.status)}">${c.status}</span></td>
-                                <td><span class="badge badge-${getCallStatusClass(c.call_status)}">${c.call_status || 'pending'}</span></td>
-                                <td>${c.total_score ? `<span class="score ${getScoreClass(c.total_score)}">${c.total_score}/100</span>` : '-'}</td>
-                                <td>${c.callback_requested ? `<span class="badge badge-warning">Yes</span><br><small>${c.callback_scheduled_time || ''}</small>` : '-'}</td>
-                                <td>
-                                    ${c.call_status === 'pending' || c.call_status === 'failed' ? 
-                                        `<button class="btn btn-success" style="font-size:11px; padding:6px 12px;" onclick="callCandidate(${c.id})">Call</button>` : 
-                                        `<button class="btn btn-neutral" style="font-size:11px; padding:6px 12px;" onclick="viewDetails(${c.id})">View</button>`
-                                    }
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-            
-            container.innerHTML = html;
-        }
+            const statsRes = await fetch(`/api/candidates/stats?view=${currentView}`);
+            const stats = await statsRes.json();
+            updateStats(stats);
 
-        function getStatusClass(status) {
-            const map = { active: 'success', duplicate: 'warning', failed: 'error' };
-            return map[status] || 'neutral';
-        }
+            let html = `<div class="table-container"><table>
+                <thead><tr>
+                    <th>Name</th><th>Phone</th><th>Company/Role</th>
+                    <th>Total Score</th><th>Technical</th><th>Notice</th><th>Budget</th>
+                    <th>Location</th><th>Experience</th><th>Confidence</th>
+                    <th>Status</th><th>Action</th>
+                </tr></thead><tbody>`;
 
-        function getCallStatusClass(status) {
-            const map = { 
-                completed: 'success', 
-                failed: 'error', 
-                pending: 'neutral',
-                'in-progress': 'info',
-                callback_scheduled: 'warning'
-            };
-            return map[status] || 'neutral';
-        }
+            candidates.forEach(c => {
+                const statusClass = 'status-' + (c.status || 'new').toLowerCase().replace(/[^a-z]/g, '');
+                const totalScoreClass = c.total_score >= 60 ? 'score-high' : c.total_score >= 45 ? 'score-medium' : 'score-low';
 
-        function getScoreClass(score) {
-            if (score >= 70) return 'score-high';
-            if (score >= 50) return 'score-medium';
-            return 'score-low';
-        }
+                html += `<tr>
+                    <td><strong>${c.name}</strong><br><small style="color:#6b7280;">${c.email}</small></td>
+                    <td>${c.phone}</td>
+                    <td style="font-size:11px;">
+                        ${c.target_company ? `<strong>${c.target_company}</strong><br>` : ''}
+                        ${c.target_job_role || '-'}
+                    </td>
+                    <td>${c.total_score ? `<span class="score-display ${totalScoreClass}">${Math.round(c.total_score)}%</span>` : '-'}</td>
+                    <td>${c.technical_score ? Math.round(c.technical_score) + '/40' : '-'}</td>
+                    <td>${c.notice_period_score ? Math.round(c.notice_period_score) + '/10' : '-'}</td>
+                    <td>${c.budget_score ? Math.round(c.budget_score) + '/10' : '-'}</td>
+                    <td>${c.location_score ? Math.round(c.location_score) + '/10' : '-'}</td>
+                    <td>${c.experience_score ? Math.round(c.experience_score) + '/10' : '-'}</td>
+                    <td>${c.confidence_fluency_score ? Math.round(c.confidence_fluency_score) + '/10' : '-'}</td>
+                    <td><span class="status-badge ${statusClass}">${c.status}</span></td>
+                    <td>
+                        ${c.status === 'New' 
+                            ? `<button class="btn" style="padding:5px 10px;font-size:11px;" onclick="callCandidate(${c.id})">📞 Call</button>` 
+                            : `<button class="btn" disabled style="padding:5px 10px;font-size:11px;">Called</button>`}
+                    </td>
+                </tr>`;
+            });
 
-        async function callCandidate(id) {
-            if (!confirm('Start screening call for this candidate?')) return;
-            
-            try {
-                const res = await fetch(`/api/candidates/${id}/call`, { method: 'POST' });
-                const data = await res.json();
-                
-                if (data.success) {
-                    alert('Call initiated successfully!');
-                    refreshCandidates();
-                } else {
-                    alert('Error: ' + (data.error || 'Call failed'));
-                }
-            } catch (err) {
-                alert('Error: ' + err.message);
+            html += '</tbody></table></div>';
+            tableDiv.innerHTML = html;
+
+        } catch (err) {
+            tableDiv.innerHTML = `<p style="color:#b91c1c;text-align:center;padding:20px;">Error: ${err.message}</p>`;
+        }
+    }
+
+    function updateStats(stats) {
+        document.getElementById('statTotal').textContent = stats.total || 0;
+        document.getElementById('statNew').textContent = stats.new || 0;
+        document.getElementById('statCalling').textContent = stats.calling || 0;
+        document.getElementById('statQualified').textContent = stats.qualified || 0;
+        document.getElementById('statRejected').textContent = stats.rejected || 0;
+        document.getElementById('statScheduled').textContent = stats.scheduled || 0;
+        document.getElementById('statCallback').textContent = stats.callback_pending || 0;
+    }
+
+    async function callCandidate(id) {
+        if (!confirm('Call this candidate?')) return;
+        try {
+            const res = await fetch(`/api/candidates/${id}/call`, { method: 'POST' });
+            const result = await res.json();
+            alert(result.success ? 'Call initiated! System will analyze and auto-update.' : 'Call failed: ' + result.error);
+            setTimeout(refreshCandidates, 2000);
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    }
+
+    async function callAllCandidates() {
+        if (!confirm('Call all pending candidates (with 2+ skills match)?')) return;
+        try {
+            const res = await fetch('/api/candidates/call-all', { method: 'POST' });
+            const result = await res.json();
+            alert(`Calling ${result.count || 0} candidates. Dashboard will auto-update.`);
+            setTimeout(refreshCandidates, 5000);
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    }
+
+    async function processCallbacks() {
+        if (!confirm('Process all pending callbacks now?')) return;
+        try {
+            const res = await fetch('/api/callbacks/process', { method: 'POST' });
+            const result = await res.json();
+            if (result.success) {
+                alert(`Callbacks processed: ${result.successful || 0} successful, ${result.failed || 0} failed`);
+                setTimeout(refreshCandidates, 3000);
+            } else {
+                alert('Error: ' + result.error);
             }
+        } catch (err) {
+            alert('Error: ' + err.message);
         }
+    }
 
-        async function callAllCandidates() {
-            if (!confirm('Start calling all pending candidates in the current batch?')) return;
-            
-            try {
-                const endpoint = currentView === 'current' 
-                    ? `/api/batch/${currentBatchId}/call-all`
-                    : '/api/candidates/call-all';
-                    
-                const res = await fetch(endpoint, { method: 'POST' });
-                const data = await res.json();
-                
-                alert(data.message || 'Calling process started');
-                refreshCandidates();
-            } catch (err) {
-                alert('Error: ' + err.message);
-            }
-        }
+    function downloadExcel() {
+        window.location.href = '/api/export/excel';
+    }
 
-        async function processCallbacks() {
-            if (!confirm('Process all scheduled callbacks?')) return;
-            
-            try {
-                const res = await fetch('/api/callbacks/process', { method: 'POST' });
-                const data = await res.json();
-                
-                alert(data.message || 'Callbacks processed');
-                refreshCandidates();
-            } catch (err) {
-                alert('Error: ' + err.message);
-            }
-        }
-
-        async function downloadExcel() {
-            window.location.href = '/api/export/excel';
-        }
-
-        async function downloadQualifiedExcel() {
-            window.location.href = '/api/export/qualified';
-        }
-
-        function viewDetails(id) {
-            window.open(`/api/candidates/${id}`, '_blank');
-        }
-
-        // Initial load
-        refreshCandidates();
-        setInterval(refreshCandidates, 30000); // Refresh every 30 seconds
-    </script>
+    // Initial load
+    setView('current');
+    setInterval(refreshCandidates, 30000);
+</script>
 </body>
 </html>
