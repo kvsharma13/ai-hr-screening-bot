@@ -1,5 +1,6 @@
 // src/controllers/webhook.controller.js
 const CandidateModel = require('../models/candidate.model');
+const BatchModel = require('../models/batch.model');
 const CallLogModel = require('../models/callLog.model');
 const TranscriptService = require('../services/transcript.service');
 const SchedulerService = require('../services/scheduler.service');
@@ -25,11 +26,8 @@ class WebhookController {
       const body = req.body || {};
       const data = body.data || body.execution || body.call || body.payload || body;
 
-      // ------------------------------------------------------------------
-      // ✅ PROCESS **ONLY FINAL WEBHOOK** – IGNORE ALL INTERMEDIATE EVENTS
-      // ------------------------------------------------------------------
+      // Only process final webhook
       const status = data.status || body.status;
-
       if (status !== "completed") {
         console.log(`⏭️ Ignoring event with status: ${status}`);
         return res.status(200).json({
@@ -39,16 +37,10 @@ class WebhookController {
         });
       }
 
-      console.log("🔥 FINAL webhook received (status = completed). Processing…");
-      // ------------------------------------------------------------------
+      console.log("🔥 FINAL webhook received (status = completed). Processing...");
 
       // Extract run_id
-      const runId =
-        data.run_id ||
-        data.execution_id ||
-        data.id ||
-        data.call_id ||
-        body.run_id;
+      const runId = data.run_id || data.execution_id || data.id || data.call_id || body.run_id;
 
       if (!runId) {
         console.error("❌ No run_id found in webhook payload");
@@ -72,15 +64,9 @@ class WebhookController {
 
       // Extract transcript
       const analytics = data.analytics || {};
-      let transcript =
-        data.transcript ||
-        data.conversation ||
-        data.messages ||
-        analytics.transcript ||
-        analytics.conversation ||
-        analytics.messages ||
-        body.transcript ||
-        "";
+      let transcript = data.transcript || data.conversation || data.messages || 
+                      analytics.transcript || analytics.conversation || 
+                      analytics.messages || body.transcript || "";
 
       const transcriptText = TranscriptService.normalizeTranscript(transcript);
       console.log(`Transcript length: ${transcriptText.length} characters`);
@@ -91,25 +77,13 @@ class WebhookController {
 
       if (isScreeningCall) {
         console.log("📞 Processing SCREENING CALL webhook...");
-        await WebhookController.processScreeningWebhook(
-          candidate,
-          transcriptText,
-          data
-        );
+        await WebhookController.processScreeningWebhook(candidate, transcriptText, data);
       } else if (isSchedulingCall) {
         console.log("📅 Processing SCHEDULING CALL webhook...");
-        await WebhookController.processSchedulingWebhook(
-          candidate,
-          transcriptText,
-          data
-        );
+        await WebhookController.processSchedulingWebhook(candidate, transcriptText, data);
       } else {
-        console.log("⚠️ Unknown call type – defaulting to screening logic");
-        await WebhookController.processScreeningWebhook(
-          candidate,
-          transcriptText,
-          data
-        );
+        console.log("⚠️ Unknown call type - defaulting to screening logic");
+        await WebhookController.processScreeningWebhook(candidate, transcriptText, data);
       }
 
       res.json({ success: true });
@@ -120,133 +94,125 @@ class WebhookController {
   }
 
   /**
-   * Process screening webhook with multi-criteria scoring
+   * Process screening webhook with complete scoring
    */
   static async processScreeningWebhook(candidate, transcript, webhookData) {
     try {
-      console.log("🤖 Analyzing screening transcript with OpenAI (Multi-Criteria Scoring)...");
+      console.log("🤖 Analyzing screening transcript with OpenAI...");
       
-      // Analyze with job requirements
+      // Get job requirements from batch
+      const batch = await BatchModel.findById(candidate.batch_id);
+      const jobRequirements = batch ? {
+        required_notice_period: batch.required_notice_period,
+        budget_min_lpa: batch.budget_min_lpa,
+        budget_max_lpa: batch.budget_max_lpa,
+        location: batch.location,
+        min_experience: batch.min_experience,
+        max_experience: batch.max_experience,
+        required_skills: batch.required_skills
+      } : {};
+
       const analysis = await TranscriptService.analyzeScreeningTranscript(
         transcript,
         candidate.skills,
-        candidate.years_of_experience,
-        candidate.notice_period
+        jobRequirements
       );
 
-      console.log("\n========== SCORING BREAKDOWN ==========");
-      console.log(`Notice Period Score: ${analysis.notice_period_score}/20`);
-      console.log(`  → ${analysis.qualification_breakdown?.notice_period?.mentioned || 'Not mentioned'}`);
-      console.log(`Budget Score: ${analysis.budget_score}/20`);
-      console.log(`  → ${analysis.qualification_breakdown?.budget?.expectation || 'Not mentioned'}`);
-      console.log(`Location Score: ${analysis.location_score}/20`);
-      console.log(`  → ${analysis.qualification_breakdown?.location?.preference || 'Not mentioned'}`);
-      console.log(`Experience Score: ${analysis.experience_score}/20`);
-      console.log(`  → ${analysis.qualification_breakdown?.experience?.mentioned || 'Not mentioned'}`);
-      console.log(`Technical Score: ${analysis.technical_score}/40`);
-      console.log(`Communication Score: ${analysis.communication_score}/20 (Confidence: ${analysis.confidence_score}/10)`);
-      console.log(`\n📊 OVERALL QUALIFICATION SCORE: ${analysis.overall_qualification_score}%`);
-      console.log("========================================\n");
-
-      // Prepare score data for database update
-      const scoreData = {
+      console.log("Analysis results:", {
+        callback_requested: analysis.callback_requested,
+        total_score: analysis.total_score,
         notice_period_score: analysis.notice_period_score,
         budget_score: analysis.budget_score,
         location_score: analysis.location_score,
         experience_score: analysis.experience_score,
         technical_score: analysis.technical_score,
-        communication_score: analysis.communication_score,
-        overall_qualification_score: analysis.overall_qualification_score,
-        qualification_breakdown: analysis.qualification_breakdown,
+        confidence_fluency_score: analysis.confidence_fluency_score
+      });
+
+      // Check if callback was requested
+      if (analysis.callback_requested) {
+        console.log("📞 CALLBACK REQUESTED - Scheduling callback...");
+        
+        const callbackTime = TranscriptService.parseCallbackTime(analysis.callback_time);
+        
+        await CandidateModel.updateCallbackStatus(candidate.id, {
+          callback_requested: true,
+          callback_scheduled_time: callbackTime,
+          callback_reason: analysis.callback_reason || 'Candidate was busy',
+          callback_attempts: 0,
+          status: 'Callback Scheduled'
+        });
+
+        await CallLogModel.create({
+          candidate_id: candidate.id,
+          call_type: 'screening_callback_request',
+          run_id: candidate.screening_run_id,
+          status: 'Callback Requested',
+          transcript: transcript
+        });
+
+        console.log(`✓ Callback scheduled for: ${callbackTime}`);
+        console.log("✓ Screening webhook processed (callback route)\n");
+        return;
+      }
+
+      // Normal screening flow - update with all scores
+      const updates = {
+        call_status: webhookData.smart_status || webhookData.status || "Completed",
         screening_transcript: transcript,
         conversation_summary: analysis.conversation_summary,
-        call_status: webhookData.smart_status || webhookData.status || "Completed",
         
-        // Legacy fields for backward compatibility
-        tech_score: analysis.tech_score,
-        job_interest: analysis.job_interest,
-        confidence_score: analysis.confidence_score
+        // Candidate's responses
+        candidate_notice_period: analysis.candidate_notice_period,
+        candidate_budget_lpa: analysis.candidate_budget_lpa,
+        candidate_location: analysis.candidate_location,
+        
+        // Individual scores
+        notice_period_score: analysis.notice_period_score,
+        budget_score: analysis.budget_score,
+        location_score: analysis.location_score,
+        experience_score: analysis.experience_score,
+        technical_score: analysis.technical_score,
+        confidence_fluency_score: analysis.confidence_fluency_score,
+        total_score: analysis.total_score,
+        
+        job_interest: analysis.job_interest
       };
 
-      // Update notice period if mentioned in call
-      if (analysis.notice_period && analysis.notice_period !== 'Not mentioned') {
-        scoreData.notice_period = analysis.notice_period;
-      }
+      // Apply 45% threshold
+      const threshold = parseFloat(process.env.TECH_SCORE_THRESHOLD || 45);
 
-      // Get threshold from environment (default: 45%)
-      const threshold = parseInt(process.env.QUALIFICATION_SCORE_THRESHOLD || process.env.TECH_SCORE_THRESHOLD || 45);
+      if (analysis.total_score !== null && analysis.total_score > 0) {
+        if (analysis.total_score >= threshold) {
+          updates.status = "Qualified - Assessment Scheduling Queued";
+          console.log(`✅ Candidate QUALIFIED (score: ${analysis.total_score}% >= ${threshold}%)`);
 
-      // Determine status based on overall score
-      if (analysis.overall_qualification_score >= threshold) {
-        scoreData.status = "Qualified - Assessment Scheduling Queued";
-        console.log(`✅ Candidate QUALIFIED (score: ${analysis.overall_qualification_score}% >= ${threshold}%)`);
-        
-        // Log qualification details
-        if (analysis.qualification_breakdown) {
-          const breakdown = analysis.qualification_breakdown;
-          console.log("\n✓ Qualification Details:");
-          if (breakdown.notice_period?.match) console.log(`  ✓ Notice Period: ${breakdown.notice_period.mentioned}`);
-          if (breakdown.budget?.match) console.log(`  ✓ Budget: ${breakdown.budget.expectation}`);
-          if (breakdown.location?.match) console.log(`  ✓ Location: ${breakdown.location.preference}`);
-          if (breakdown.experience?.match) console.log(`  ✓ Experience: ${breakdown.experience.mentioned}`);
-          console.log(`  ✓ Technical: ${analysis.technical_score}/40`);
-          console.log(`  ✓ Communication: ${analysis.communication_score}/20\n`);
+          // Schedule assessment call
+          SchedulerService.scheduleAssessmentCall(
+            candidate.id,
+            analysis.total_score,
+            analysis.candidate_notice_period || candidate.notice_period
+          );
+        } else {
+          updates.status = "Rejected - Low Score (Below 45%)";
+          console.log(`❌ Candidate REJECTED (score: ${analysis.total_score}% < ${threshold}%)`);
         }
-
-        // Update candidate with scores
-        await CandidateModel.updateWithScores(candidate.id, scoreData);
-
-        // Schedule assessment call
-        SchedulerService.scheduleAssessmentCall(
-          candidate.id,
-          analysis.overall_qualification_score,
-          scoreData.notice_period || candidate.notice_period
-        );
-
       } else {
-        scoreData.status = "Rejected - Below Qualification Threshold";
-        console.log(`❌ Candidate REJECTED (score: ${analysis.overall_qualification_score}% < ${threshold}%)`);
-        
-        // Log rejection reasons
-        if (analysis.qualification_breakdown) {
-          const breakdown = analysis.qualification_breakdown;
-          console.log("\n✗ Rejection Reasons:");
-          if (!breakdown.notice_period?.match && breakdown.notice_period?.score === 0) {
-            console.log(`  ✗ Notice Period: ${breakdown.notice_period.mentioned} (required: ≤${breakdown.notice_period.required} days)`);
-          }
-          if (!breakdown.budget?.match && breakdown.budget?.score === 0) {
-            console.log(`  ✗ Budget: ${breakdown.budget.expectation} (required: ≤${breakdown.budget.required} LPA)`);
-          }
-          if (!breakdown.location?.match && breakdown.location?.score === 0) {
-            console.log(`  ✗ Location: ${breakdown.location.preference} (required: ${breakdown.location.required})`);
-          }
-          if (!breakdown.experience?.match && breakdown.experience?.score === 0) {
-            console.log(`  ✗ Experience: ${breakdown.experience.mentioned} (required: ≥${breakdown.experience.required} years)`);
-          }
-          if (analysis.technical_score < 20) {
-            console.log(`  ✗ Technical: ${analysis.technical_score}/40 (weak performance)`);
-          }
-          if (analysis.communication_score < 10) {
-            console.log(`  ✗ Communication: ${analysis.communication_score}/20 (poor communication)`);
-          }
-          console.log();
-        }
-
-        // Update candidate with scores
-        await CandidateModel.updateWithScores(candidate.id, scoreData);
+        updates.status = "Manual Review Required - No Score";
+        console.log("⚠️ No score calculated, needs manual review");
       }
 
-      // Log call to call_logs table
+      await CandidateModel.update(candidate.id, updates);
+
       await CallLogModel.create({
         candidate_id: candidate.id,
         call_type: "screening",
         run_id: candidate.screening_run_id,
-        status: scoreData.call_status,
+        status: updates.call_status,
         transcript: transcript
       });
 
       console.log("✓ Screening call webhook processed successfully\n");
-
     } catch (error) {
       console.error("❌ Error processing screening webhook:", error.message);
       throw error;
@@ -254,14 +220,12 @@ class WebhookController {
   }
 
   /**
-   * Process scheduling webhook (unchanged from original)
+   * Process scheduling webhook (NO AUTO EMAIL)
    */
   static async processSchedulingWebhook(candidate, transcript, webhookData) {
     try {
       console.log("🤖 Analyzing scheduling transcript with OpenAI...");
-      const analysis = await TranscriptService.analyzeSchedulingTranscript(
-        transcript
-      );
+      const analysis = await TranscriptService.analyzeSchedulingTranscript(transcript);
 
       console.log("Scheduling analysis:", {
         email_verified: analysis.email_verified,
@@ -292,34 +256,15 @@ class WebhookController {
         console.log(`✓ Assessment time: ${analysis.assessment_time}`);
       }
 
-      if (
-        analysis.candidate_confirmed &&
-        analysis.assessment_date &&
-        analysis.assessment_time
-      ) {
-        updates.status = "Assessment Scheduled - Link Sending";
-
-        await CandidateModel.update(candidate.id, updates);
-
-        console.log("📧 Sending assessment link via email...");
-        const emailResult = await SchedulerService.sendAssessmentLink(
-          candidate.id,
-          analysis.assessment_date,
-          analysis.assessment_time
-        );
-
-        if (emailResult.success) {
-          console.log("✓ Assessment link sent successfully");
-        } else {
-          console.error("❌ Failed to send assessment link");
-          await CandidateModel.update(candidate.id, {
-            status: "Assessment Scheduled - Email Failed"
-          });
-        }
+      // NO AUTO EMAIL - Manual sending by team
+      if (analysis.candidate_confirmed && analysis.assessment_date && analysis.assessment_time) {
+        updates.status = "Assessment Scheduled - Awaiting Manual Link";
+        console.log("📋 Assessment scheduled - Team will send link manually");
       } else {
         updates.status = "Scheduling Call Completed - Pending Confirmation";
-        await CandidateModel.update(candidate.id, updates);
       }
+
+      await CandidateModel.update(candidate.id, updates);
 
       await CallLogModel.create({
         candidate_id: candidate.id,
@@ -336,9 +281,6 @@ class WebhookController {
     }
   }
 
-  /**
-   * Get last webhook payload (for debugging)
-   */
   static getLastWebhook(req, res) {
     if (!lastWebhookPayload) {
       return res.json({

@@ -1,6 +1,5 @@
 // src/services/transcript.service.js
 const OpenAI = require('openai');
-const JobRequirementsModel = require('../models/jobRequirements.model');
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -9,138 +8,101 @@ const openai = new OpenAI({
 class TranscriptService {
   
   /**
-   * Analyze screening call transcript with multi-criteria scoring
-   * Scores based on job requirements: notice period, budget, location, experience, technical skills, communication
+   * Analyze screening call transcript with detailed scoring
    */
-  static async analyzeScreeningTranscript(transcript, candidateSkills, candidateExperience, candidateNoticePeriod) {
+  static async analyzeScreeningTranscript(transcript, candidateSkills, jobRequirements = {}) {
     try {
-      // Load job requirements
-      const jobReqs = await JobRequirementsModel.getCurrent();
-      
-      // Build scoring criteria for OpenAI
-      let scoringCriteria = `
-SCORING SYSTEM (Total: 140 points, convert to percentage at end):
-
-1. NOTICE PERIOD SCORE (0 or 20 points):
-   ${jobReqs && jobReqs.notice_period 
-     ? `- Award 20 points if candidate's notice period is ${jobReqs.notice_period} days or less
-   - Award 0 points otherwise
-   - Extract notice period from transcript (immediate, 15 days, 1 month = 30 days, 2 months = 60 days, etc.)`
-     : '- Award 20 points (no requirement set)'}
-
-2. BUDGET/SALARY SCORE (0 or 20 points):
-   ${jobReqs && jobReqs.budget
-     ? `- Award 20 points if candidate's salary expectation is ${jobReqs.budget} LPA or less
-   - Award 0 points if expectation is more than ${jobReqs.budget} LPA
-   - Extract salary expectation from transcript`
-     : '- Award 20 points (no requirement set)'}
-
-3. LOCATION SCORE (0 or 20 points):
-   ${jobReqs && jobReqs.location
-     ? `- Award 20 points if candidate is in ${jobReqs.location} OR willing to relocate to ${jobReqs.location}
-   - Award 0 points if unwilling to relocate or wrong location preference
-   - Extract location preference from transcript`
-     : '- Award 20 points (no requirement set)'}
-
-4. EXPERIENCE SCORE (0 or 20 points):
-   ${jobReqs && jobReqs.min_experience
-     ? `- Award 20 points if candidate has ${jobReqs.min_experience}+ years of experience
-   - Award 0 points if less than ${jobReqs.min_experience} years
-   - Verify experience from transcript, fallback to resume: ${candidateExperience} years`
-     : '- Award 20 points (no requirement set)'}
-
-5. TECHNICAL SKILLS SCORE (0 to 40 points):
-   - Evaluate technical knowledge demonstrated in the call
-   - Candidate's skills: ${candidateSkills}
-   - Score based on:
-     * Depth of answers to technical questions (0-15 points)
-     * Practical experience demonstrated (0-15 points)
-     * Clarity and confidence in technical discussion (0-10 points)
-   - 35-40: Excellent technical knowledge
-   - 25-34: Good understanding
-   - 15-24: Basic knowledge
-   - 0-14: Insufficient knowledge
-
-6. COMMUNICATION SCORE (0 to 20 points):
-   - Based on confidence score (1-10 scale) × 2
-   - Evaluate: clarity, coherence, professionalism, enthusiasm
-   - 1-3: Poor communication
-   - 4-6: Average communication
-   - 7-8: Good communication
-   - 9-10: Excellent communication
-
-FINAL CALCULATION:
-overall_score = (notice_period_score + budget_score + location_score + experience_score + technical_score + communication_score) / 140 × 100
-`;
-
       const completion = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
-            content: 'You are an expert recruiter analyzing phone screening transcripts. Provide accurate, data-driven assessments based on specific job requirements. Return ONLY valid JSON.'
+            content: 'You are an expert recruiter analyzing phone screening transcripts. Provide accurate, data-driven scoring. Return ONLY valid JSON.'
           },
           {
             role: 'user',
-            content: `Analyze this phone screening transcript and score the candidate based on job requirements.
+            content: `Analyze this phone screening transcript and provide detailed scoring:
 
-CANDIDATE INFO:
-- Skills from Resume: ${candidateSkills}
-- Experience from Resume: ${candidateExperience} years
-- Notice Period from Resume: ${candidateNoticePeriod}
+Candidate's Listed Skills: ${candidateSkills}
 
-JOB REQUIREMENTS:
-${jobReqs ? `
-- Notice Period: ≤ ${jobReqs.notice_period || 'Not specified'} days
-- Budget: ≤ ${jobReqs.budget || 'Not specified'} LPA
-- Location: ${jobReqs.location || 'Not specified'}
-- Min Experience: ${jobReqs.min_experience || 'Not specified'} years
-- Required Skills: ${jobReqs.required_skills ? jobReqs.required_skills.join(', ') : 'Not specified'}
-` : 'No specific requirements set'}
+Job Requirements:
+- Required Notice Period: ${jobRequirements.required_notice_period || 'Not specified'}
+- Budget Range: ${jobRequirements.budget_min_lpa || 'N/A'} - ${jobRequirements.budget_max_lpa || 'N/A'} LPA
+- Location: ${jobRequirements.location || 'Not specified'}
+- Experience: ${jobRequirements.min_experience || 'N/A'} - ${jobRequirements.max_experience || 'N/A'} years
+- Required Skills: ${jobRequirements.required_skills || 'Not specified'}
 
-TRANSCRIPT:
+Transcript:
 ${transcript}
-
-${scoringCriteria}
 
 Return ONLY this JSON structure (no markdown, no extra text):
 {
-  "notice_period_score": <0 or 20>,
-  "notice_period_mentioned": "<extracted notice period or 'Not mentioned'>",
-  "notice_period_match": <true/false>,
+  "callback_requested": <boolean: true if candidate said they're busy/not free>,
+  "callback_time": "<extracted callback time or null>",
+  "callback_reason": "<reason for callback or null>",
   
-  "budget_score": <0 or 20>,
-  "salary_expectation": "<extracted salary or 'Not mentioned'>",
-  "budget_match": <true/false>,
+  "candidate_notice_period": "<extracted notice period from candidate's response>",
+  "candidate_budget_lpa": <number: candidate's salary expectation in LPA, null if not mentioned>,
+  "candidate_location": "<candidate's preferred location or null>",
   
-  "location_score": <0 or 20>,
-  "location_preference": "<extracted location preference or 'Not mentioned'>",
-  "location_match": <true/false>,
+  "notice_period_score": <number 0-10: 10 if immediate, 8-9 if <=15 days, 6-7 if <=30 days, 3-5 if >30 days, 0 if much longer than required>,
+  "budget_score": <number 0-10: 10 if within range, 7-9 if slightly above, 5-6 if negotiable, 0-4 if far above range>,
+  "location_score": <number 0-10: 10 if exact match, 5-8 if willing to relocate, 0-4 if not willing>,
+  "experience_score": <number 0-10: 10 if perfect match, 7-9 if close, 5-6 if acceptable, 0-4 if too low/high>,
+  "technical_score": <number 0-40: based on technical answers quality>,
+  "confidence_fluency_score": <number 0-10: communication clarity and confidence>,
   
-  "experience_score": <0 or 20>,
-  "experience_mentioned": "<extracted experience or use resume value>",
-  "experience_match": <true/false>,
-  
-  "technical_score": <0-40>,
-  "technical_assessment": "<brief assessment of technical answers>",
-  
-  "communication_score": <0-20>,
-  "confidence_rating": <1-10>,
-  
-  "overall_qualification_score": <calculated percentage 0-100>,
-  
-  "job_interest": "<High/Medium/Low based on enthusiasm>",
-  "conversation_summary": "<2-3 sentence summary>",
-  "key_strengths": ["<strength 1>", "<strength 2>"],
-  "key_concerns": ["<concern 1>", "<concern 2>"],
-  "recommendation": "<Proceed/Manual Review/Reject with brief reason>"
+  "job_interest": "<High/Medium/Low>",
+  "summary": "<2-3 sentence summary>",
+  "key_points": ["<point 1>", "<point 2>"],
+  "red_flags": ["<flag 1>" or empty array],
+  "recommendation": "<Proceed/Manual Review/Reject>"
 }
 
-IMPORTANT:
-- Be strict but fair in scoring
-- If information is not mentioned in transcript, mark as "Not mentioned" and give 0 points for that criterion
-- Calculate overall_score accurately: sum all scores, divide by 140, multiply by 100
-- Round overall_score to 2 decimal places`
+SCORING GUIDELINES:
+
+1. NOTICE PERIOD SCORE (0-10):
+   - Immediate: 10
+   - ≤15 days: 8-9
+   - 16-30 days: 6-7
+   - 31-45 days: 4-5
+   - >45 days: 0-3
+
+2. BUDGET SCORE (0-10):
+   - Within range: 10
+   - 10-15% above: 7-9
+   - 15-25% above: 5-6
+   - >25% above: 0-4
+   - Not mentioned: 5 (neutral)
+
+3. LOCATION SCORE (0-10):
+   - Exact match: 10
+   - Willing to relocate: 7-8
+   - Open to remote: 5-8
+   - Not willing: 0-4
+
+4. EXPERIENCE SCORE (0-10):
+   - Perfect match: 10
+   - Within ±1 year: 8-9
+   - Within ±2 years: 6-7
+   - Further: 0-5
+
+5. TECHNICAL SCORE (0-40):
+   - Excellent answers: 32-40
+   - Good understanding: 24-31
+   - Basic knowledge: 16-23
+   - Weak: 0-15
+   - If callback requested: null
+
+6. CONFIDENCE/FLUENCY SCORE (0-10):
+   - Excellent communication: 9-10
+   - Good: 7-8
+   - Average: 5-6
+   - Poor: 0-4
+
+CALLBACK DETECTION:
+- Set callback_requested to TRUE if candidate said: "I'm busy", "Not now", "Call me later", etc.
+- If callback was requested, set technical_score to null (no screening happened)`
           }
         ],
         temperature: 0.3,
@@ -159,113 +121,183 @@ IMPORTANT:
 
       const analysis = JSON.parse(cleaned);
 
-      // Validate and prepare detailed breakdown
-      const breakdown = {
-        notice_period: {
-          score: analysis.notice_period_score || 0,
-          mentioned: analysis.notice_period_mentioned || 'Not mentioned',
-          match: analysis.notice_period_match || false,
-          required: jobReqs?.notice_period || 'Not specified'
-        },
-        budget: {
-          score: analysis.budget_score || 0,
-          expectation: analysis.salary_expectation || 'Not mentioned',
-          match: analysis.budget_match || false,
-          required: jobReqs?.budget || 'Not specified'
-        },
-        location: {
-          score: analysis.location_score || 0,
-          preference: analysis.location_preference || 'Not mentioned',
-          match: analysis.location_match || false,
-          required: jobReqs?.location || 'Not specified'
-        },
-        experience: {
-          score: analysis.experience_score || 0,
-          mentioned: analysis.experience_mentioned || candidateExperience,
-          match: analysis.experience_match || false,
-          required: jobReqs?.min_experience || 'Not specified'
-        },
-        technical: {
-          score: analysis.technical_score || 0,
-          max: 40,
-          assessment: analysis.technical_assessment || 'Not assessed'
-        },
-        communication: {
-          score: analysis.communication_score || 0,
-          max: 20,
-          confidence_rating: analysis.confidence_rating || 5
-        }
-      };
+      // Calculate total score
+      let totalScore = 0;
+      if (!analysis.callback_requested && analysis.technical_score !== null) {
+        totalScore = (
+          (analysis.notice_period_score || 0) +
+          (analysis.budget_score || 0) +
+          (analysis.location_score || 0) +
+          (analysis.experience_score || 0) +
+          (analysis.technical_score || 0) +
+          (analysis.confidence_fluency_score || 0)
+        );
+      }
 
-      // Calculate overall score
-      const totalPoints = 
-        breakdown.notice_period.score +
-        breakdown.budget.score +
-        breakdown.location.score +
-        breakdown.experience.score +
-        breakdown.technical.score +
-        breakdown.communication.score;
-
-      const overallScore = Math.round((totalPoints / 140) * 100 * 100) / 100; // Round to 2 decimals
-
+      // Validate and normalize
       return {
-        // Individual criterion scores
-        notice_period_score: breakdown.notice_period.score,
-        budget_score: breakdown.budget.score,
-        location_score: breakdown.location.score,
-        experience_score: breakdown.experience.score,
-        technical_score: breakdown.technical.score,
-        communication_score: breakdown.communication.score,
+        callback_requested: analysis.callback_requested || false,
+        callback_time: analysis.callback_time || null,
+        callback_reason: analysis.callback_reason || null,
         
-        // Overall score
-        overall_qualification_score: overallScore,
+        candidate_notice_period: analysis.candidate_notice_period || null,
+        candidate_budget_lpa: analysis.candidate_budget_lpa || null,
+        candidate_location: analysis.candidate_location || null,
         
-        // Detailed breakdown
-        qualification_breakdown: breakdown,
+        notice_period_score: this.validateScore(analysis.notice_period_score, 10),
+        budget_score: this.validateScore(analysis.budget_score, 10),
+        location_score: this.validateScore(analysis.location_score, 10),
+        experience_score: this.validateScore(analysis.experience_score, 10),
+        technical_score: this.validateScore(analysis.technical_score, 40),
+        confidence_fluency_score: this.validateScore(analysis.confidence_fluency_score, 10),
+        total_score: totalScore,
         
-        // Additional info
-        conversation_summary: analysis.conversation_summary || 'Analysis completed',
-        job_interest: analysis.job_interest || 'Not mentioned',
-        key_strengths: Array.isArray(analysis.key_strengths) ? analysis.key_strengths : [],
-        key_concerns: Array.isArray(analysis.key_concerns) ? analysis.key_concerns : [],
-        recommendation: analysis.recommendation || 'Manual Review',
-        
-        // Legacy fields (for backward compatibility)
-        tech_score: breakdown.technical.score, // Out of 40, will be converted to percentage in display
-        confidence_score: breakdown.communication.confidence_rating,
-        notice_period: breakdown.notice_period.mentioned
+        job_interest: analysis.job_interest || 'Not asked',
+        conversation_summary: analysis.summary || 'Analysis unavailable',
+        key_points: Array.isArray(analysis.key_points) ? analysis.key_points : [],
+        red_flags: Array.isArray(analysis.red_flags) ? analysis.red_flags : [],
+        recommendation: analysis.recommendation || 'Manual Review'
       };
 
     } catch (error) {
       console.error('Transcript analysis error:', error.message);
       
-      // Return default analysis if OpenAI fails
       return {
-        notice_period_score: 0,
-        budget_score: 0,
-        location_score: 0,
-        experience_score: 0,
-        technical_score: 0,
-        communication_score: 0,
-        overall_qualification_score: 0,
-        qualification_breakdown: {
-          error: 'Analysis failed',
-          message: error.message
-        },
-        conversation_summary: 'Automatic analysis failed. Manual review required.',
+        callback_requested: false,
+        callback_time: null,
+        callback_reason: null,
+        candidate_notice_period: null,
+        candidate_budget_lpa: null,
+        candidate_location: null,
+        notice_period_score: null,
+        budget_score: null,
+        location_score: null,
+        experience_score: null,
+        technical_score: null,
+        confidence_fluency_score: null,
+        total_score: 0,
         job_interest: 'Not analyzed',
-        key_strengths: [],
-        key_concerns: ['Automatic analysis failed'],
-        recommendation: 'Manual Review - Analysis Error',
-        tech_score: null,
-        confidence_score: null,
-        notice_period: 'Not mentioned'
+        conversation_summary: 'Automatic analysis failed. Manual review required.',
+        key_points: [],
+        red_flags: ['Automatic analysis failed'],
+        recommendation: 'Manual Review'
       };
     }
   }
 
   /**
-   * Analyze scheduling call transcript to extract email and assessment details
+   * Parse callback time to actual timestamp
+   */
+  static parseCallbackTime(callbackTimeString) {
+    if (!callbackTimeString) return null;
+
+    try {
+      const now = new Date();
+      const lowerStr = callbackTimeString.toLowerCase();
+
+      // Handle relative times
+      if (lowerStr.includes('in') && lowerStr.includes('hour')) {
+        const hours = parseInt(lowerStr.match(/\d+/)?.[0] || 1);
+        return new Date(now.getTime() + hours * 60 * 60 * 1000);
+      }
+
+      if (lowerStr.includes('in') && lowerStr.includes('minute')) {
+        const minutes = parseInt(lowerStr.match(/\d+/)?.[0] || 30);
+        return new Date(now.getTime() + minutes * 60 * 1000);
+      }
+
+      // Handle "tomorrow"
+      if (lowerStr.includes('tomorrow')) {
+        const tomorrow = new Date(now);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        const timeMatch = lowerStr.match(/(\d+)\s*(am|pm|:)/i);
+        if (timeMatch) {
+          const hour = parseInt(timeMatch[1]);
+          const isPM = lowerStr.includes('pm');
+          tomorrow.setHours(isPM && hour !== 12 ? hour + 12 : hour, 0, 0, 0);
+        } else if (lowerStr.includes('morning')) {
+          tomorrow.setHours(10, 0, 0, 0);
+        } else if (lowerStr.includes('afternoon')) {
+          tomorrow.setHours(14, 0, 0, 0);
+        } else if (lowerStr.includes('evening')) {
+          tomorrow.setHours(18, 0, 0, 0);
+        } else {
+          tomorrow.setHours(10, 0, 0, 0);
+        }
+        return tomorrow;
+      }
+
+      // Handle "today evening/afternoon"
+      if (lowerStr.includes('today') || lowerStr.includes('evening') || lowerStr.includes('afternoon')) {
+        const today = new Date(now);
+        
+        if (lowerStr.includes('evening') || lowerStr.includes('after 6')) {
+          today.setHours(18, 0, 0, 0);
+        } else if (lowerStr.includes('afternoon')) {
+          today.setHours(14, 0, 0, 0);
+        } else {
+          const timeMatch = lowerStr.match(/(\d+)\s*(am|pm|:)/i);
+          if (timeMatch) {
+            const hour = parseInt(timeMatch[1]);
+            const isPM = lowerStr.includes('pm');
+            today.setHours(isPM && hour !== 12 ? hour + 12 : hour, 0, 0, 0);
+          }
+        }
+        return today;
+      }
+
+      // Handle specific time today
+      const timeMatch = lowerStr.match(/(\d+):?(\d+)?\s*(am|pm)/i);
+      if (timeMatch) {
+        const today = new Date(now);
+        const hour = parseInt(timeMatch[1]);
+        const minute = parseInt(timeMatch[2] || '0');
+        const isPM = timeMatch[3].toLowerCase() === 'pm';
+        
+        today.setHours(isPM && hour !== 12 ? hour + 12 : hour, minute, 0, 0);
+        
+        if (today < now) {
+          today.setDate(today.getDate() + 1);
+        }
+        
+        return today;
+      }
+
+      // Handle day of week
+      const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      for (let i = 0; i < days.length; i++) {
+        if (lowerStr.includes(days[i])) {
+          const targetDay = i;
+          const currentDay = now.getDay();
+          const daysUntilTarget = (targetDay - currentDay + 7) % 7 || 7;
+          
+          const targetDate = new Date(now);
+          targetDate.setDate(now.getDate() + daysUntilTarget);
+          
+          const timeMatch = lowerStr.match(/(\d+)\s*(am|pm)/i);
+          if (timeMatch) {
+            const hour = parseInt(timeMatch[1]);
+            const isPM = lowerStr.includes('pm');
+            targetDate.setHours(isPM && hour !== 12 ? hour + 12 : hour, 0, 0, 0);
+          } else {
+            targetDate.setHours(10, 0, 0, 0);
+          }
+          
+          return targetDate;
+        }
+      }
+
+      return new Date(now.getTime() + 2 * 60 * 60 * 1000);
+
+    } catch (error) {
+      console.error('Error parsing callback time:', error.message);
+      return new Date(Date.now() + 2 * 60 * 60 * 1000);
+    }
+  }
+
+  /**
+   * Analyze scheduling call transcript
    */
   static async analyzeSchedulingTranscript(transcript) {
     try {
@@ -278,7 +310,7 @@ IMPORTANT:
           },
           {
             role: 'user',
-            content: `Analyze this scheduling call transcript and extract information:
+            content: `Analyze this scheduling call transcript:
 
 Transcript:
 ${transcript}
@@ -290,14 +322,8 @@ Return ONLY this JSON (no markdown):
   "assessment_date": "<date in YYYY-MM-DD format if scheduled, otherwise null>",
   "assessment_time": "<time in HH:MM format if scheduled, otherwise null>",
   "candidate_confirmed": <boolean: true if candidate confirmed the slot>,
-  "summary": "<brief summary of the call outcome>"
-}
-
-Extract dates/times carefully. Common formats:
-- "Tomorrow" = calculate next day
-- "Monday", "Tuesday" etc = next occurrence
-- "3 PM", "15:00", "3 o'clock" = parse time
-- "December 10" = use current year if not specified`
+  "summary": "<brief summary>"
+}`
           }
         ],
         temperature: 0.2,
@@ -305,15 +331,9 @@ Extract dates/times carefully. Common formats:
       });
 
       const response = completion.choices?.[0]?.message?.content;
-      if (!response) {
-        throw new Error('Empty response from OpenAI');
-      }
+      if (!response) throw new Error('Empty response from OpenAI');
 
-      const cleaned = response
-        .replace(/```json/gi, '')
-        .replace(/```/g, '')
-        .trim();
-
+      const cleaned = response.replace(/```json/gi, '').replace(/```/g, '').trim();
       const analysis = JSON.parse(cleaned);
 
       return {
@@ -340,14 +360,22 @@ Extract dates/times carefully. Common formats:
   }
 
   /**
-   * Convert transcript array to text (if Bolna sends structured format)
+   * Validate and normalize scores
+   */
+  static validateScore(score, max = 100) {
+    if (score === null || score === undefined || isNaN(score)) {
+      return null;
+    }
+    const num = parseFloat(score);
+    return Math.max(0, Math.min(max, num));
+  }
+
+  /**
+   * Convert transcript array to text
    */
   static normalizeTranscript(transcript) {
     if (!transcript) return '';
-
-    if (typeof transcript === 'string') {
-      return transcript;
-    }
+    if (typeof transcript === 'string') return transcript;
 
     if (Array.isArray(transcript)) {
       return transcript.map(msg => {

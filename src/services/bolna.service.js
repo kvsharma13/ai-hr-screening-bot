@@ -34,10 +34,10 @@ class BolnaService {
         }
       );
 
-      console.log('✓ Bolna agent prompt updated successfully');
+      console.log('âœ“ Bolna agent prompt updated successfully');
       return response.data;
     } catch (error) {
-      console.error('❌ Bolna agent update error:', error.response?.data || error.message);
+      console.error('âŒ Bolna agent update error:', error.response?.data || error.message);
       throw new Error('Failed to update Bolna agent');
     }
   }
@@ -82,7 +82,7 @@ class BolnaService {
                     response.data.callId || 
                     response.data.id;
 
-      console.log('✓ Call initiated successfully, run_id:', runId);
+      console.log('âœ“ Call initiated successfully, run_id:', runId);
 
       return {
         success: true,
@@ -91,7 +91,7 @@ class BolnaService {
       };
 
     } catch (error) {
-      console.error('❌ Bolna call error:', error.response?.data || error.message);
+      console.error('âŒ Bolna call error:', error.response?.data || error.message);
       return {
         success: false,
         error: error.response?.data?.message || error.message

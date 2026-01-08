@@ -1,68 +1,59 @@
 // src/services/scheduler.service.js
 const CandidateModel = require('../models/candidate.model');
-const BolnaService = require('../services/bolna.service');
-const PromptService = require('../services/prompt.service');
-const EmailService = require('../services/email.service');
+const BolnaService = require('./bolna.service');
+const PromptService = require('./prompt.service');
 const { v4: uuidv4 } = require('uuid');
 
 class SchedulerService {
   
   /**
    * Schedule assessment scheduling call after 2 minutes
-   * Now uses overall_qualification_score instead of tech_score
    */
-  static scheduleAssessmentCall(candidateId, overallScore, noticePeriod) {
+  static scheduleAssessmentCall(candidateId, totalScore, noticePeriod) {
     const delayMs = parseInt(process.env.AUTO_SCHEDULE_DELAY_MS || 120000); // 2 minutes
     
-    console.log(`⏰ Scheduling assessment call for candidate ${candidateId} in ${delayMs/1000} seconds...`);
-    console.log(`   Overall Qualification Score: ${overallScore}%`);
+    console.log(`â° Scheduling assessment call for candidate ${candidateId} in ${delayMs/1000} seconds...`);
     
     setTimeout(async () => {
       try {
-        // Fetch latest candidate data
         const candidate = await CandidateModel.findById(candidateId);
         
         if (!candidate) {
-          console.log('❌ Candidate not found for scheduling call');
+          console.log('âŒ Candidate not found for scheduling call');
           return;
         }
 
         if (!candidate.phone || candidate.phone === 'Not available') {
-          console.log('❌ No valid phone number for scheduling call');
+          console.log('âŒ No valid phone number for scheduling call');
           return;
         }
 
-        console.log(`\n========== ASSESSMENT SCHEDULING ==========`);
-        console.log(`📞 Initiating assessment scheduling call for ${candidate.name} (ID: ${candidateId})`);
-        console.log(`   Qualification Score: ${overallScore}%`);
-        console.log(`   Notice Period: ${noticePeriod}`);
-        console.log(`==========================================\n`);
+        console.log(`ðŸ“ž Initiating assessment scheduling call for ${candidate.name} (ID: ${candidateId})`);
 
-        // Generate scheduling prompt with email verification
+        // Generate scheduling prompt with company/role
         const prompt = PromptService.getSchedulingPrompt(
           candidate.name,
           candidate.email,
-          overallScore,
-          noticePeriod
+          totalScore,
+          candidate.target_company,
+          candidate.target_job_role
         );
 
         // Make the call
         const callResult = await BolnaService.makeCall(candidate.phone, prompt);
 
         if (callResult.success && callResult.run_id) {
-          // Update candidate status
           await CandidateModel.update(candidateId, {
             status: 'Calling - Assessment Scheduling',
             call_status: 'Calling - Scheduling',
             scheduling_run_id: callResult.run_id
           });
 
-          console.log(`✓ Assessment scheduling call initiated successfully`);
-          console.log(`✓ Run ID: ${callResult.run_id}`);
-          console.log(`✅ Webhook will deliver transcript automatically`);
+          console.log(`âœ“ Assessment scheduling call initiated successfully`);
+          console.log(`âœ“ Run ID: ${callResult.run_id}`);
 
         } else {
-          console.error('❌ Assessment scheduling call failed');
+          console.error('âŒ Assessment scheduling call failed');
           await CandidateModel.update(candidateId, {
             status: 'Scheduling Call Failed - Manual Intervention Required',
             call_status: 'Scheduling Call Failed'
@@ -70,69 +61,242 @@ class SchedulerService {
         }
 
       } catch (error) {
-        console.error('❌ Error during scheduled assessment call:', error.message);
+        console.error('âŒ Error during scheduled assessment call:', error.message);
       }
     }, delayMs);
   }
 
   /**
-   * Send assessment link via email
+   * Process scheduled callbacks (called by cron job every minute)
+   * Only processes callbacks where the scheduled time has passed
    */
-  static async sendAssessmentLink(candidateId, assessmentDate, assessmentTime) {
+  static async processScheduledCallbacks() {
     try {
-      const candidate = await CandidateModel.findById(candidateId);
+      const candidates = await CandidateModel.getPendingCallbacks();
       
-      if (!candidate) {
-        throw new Error('Candidate not found');
+      if (candidates.length === 0) {
+        // Don't log if no callbacks to keep console clean
+        return {
+          success: true,
+          message: 'No pending callbacks',
+          processed: 0
+        };
       }
 
-      // Use verified email if available, otherwise use original
-      const emailToSend = candidate.verified_email || candidate.email;
-
-      if (!emailToSend || emailToSend === 'Not available') {
-        console.log('❌ No valid email address to send assessment link');
-        return { success: false, error: 'No valid email' };
-      }
-
-      // Generate unique assessment link
-      const assessmentLink = this.generateAssessmentLink(candidate.id);
-
-      console.log(`📧 Sending assessment link to: ${emailToSend}`);
-      console.log(`   Date: ${assessmentDate}`);
-      console.log(`   Time: ${assessmentTime}`);
-
-      // Send email
-      const emailResult = await EmailService.sendAssessmentLink({
-        name: candidate.name,
-        email: emailToSend,
-        assessment_date: assessmentDate,
-        assessment_time: assessmentTime,
-        assessment_link: assessmentLink
+      // Filter candidates whose callback time has arrived or passed
+      const now = new Date();
+      const dueCallbacks = candidates.filter(candidate => {
+        const scheduledTime = new Date(candidate.callback_scheduled_time);
+        return scheduledTime <= now;
       });
 
-      if (emailResult.success) {
-        // Update candidate record
-        await CandidateModel.update(candidateId, {
-          assessment_link: assessmentLink,
-          assessment_link_sent: true,
-          status: 'Assessment Link Sent'
-        });
-
-        console.log(`✓ Assessment link sent successfully to ${emailToSend}`);
-        return { success: true, link: assessmentLink };
-      } else {
-        console.error('❌ Failed to send assessment link:', emailResult.error);
-        return { success: false, error: emailResult.error };
+      if (dueCallbacks.length === 0) {
+        console.log(`⏰ ${candidates.length} callbacks scheduled, but none are due yet`);
+        return {
+          success: true,
+          message: 'No callbacks due yet',
+          processed: 0
+        };
       }
 
+      console.log(`\n========== Processing ${dueCallbacks.length} Due Callbacks ==========\n`);
+
+      let successCount = 0;
+      let failedCount = 0;
+
+      for (const candidate of dueCallbacks) {
+        try {
+          console.log(`📞 Processing callback for ${candidate.name} (Scheduled: ${new Date(candidate.callback_scheduled_time).toLocaleString()})`);
+          
+          // Generate callback prompt
+          const prompt = PromptService.getCallbackPrompt(
+            candidate.name,
+            candidate.target_company,
+            candidate.target_job_role
+          );
+
+          // Make the call
+          const callResult = await BolnaService.makeCall(candidate.phone, prompt);
+
+          if (callResult.success && callResult.run_id) {
+            // Update candidate - clear callback and set as screening call
+            await CandidateModel.update(candidate.id, {
+              status: 'Calling - Callback Screening',
+              call_status: 'Calling - Screening',
+              screening_run_id: callResult.run_id,
+              callback_requested: false,
+              callback_scheduled_time: null
+            });
+
+            console.log(`✓ Callback initiated for ${candidate.name}`);
+            successCount++;
+
+          } else {
+            // Callback failed - increment attempts
+            const newAttempts = (candidate.callback_attempts || 0) + 1;
+            const maxAttempts = parseInt(process.env.MAX_CALLBACK_ATTEMPTS || 3);
+
+            await CandidateModel.incrementCallbackAttempts(candidate.id);
+
+            if (newAttempts >= maxAttempts) {
+              // Max attempts reached
+              await CandidateModel.update(candidate.id, {
+                status: 'No Response - Max Callback Attempts',
+                call_status: 'Failed - No Response',
+                callback_requested: false
+              });
+              console.log(`✗ Max callback attempts reached for ${candidate.name}`);
+            } else {
+              // Reschedule for 2 hours later
+              const nextCallbackTime = new Date(Date.now() + 2 * 60 * 60 * 1000);
+              await CandidateModel.update(candidate.id, {
+                callback_scheduled_time: nextCallbackTime,
+                status: 'Callback Rescheduled'
+              });
+              console.log(`⏰ Callback rescheduled for ${candidate.name} at ${nextCallbackTime.toLocaleString()}`);
+            }
+
+            failedCount++;
+          }
+
+          // Wait 3 seconds between calls
+          await new Promise(resolve => setTimeout(resolve, 3000));
+
+        } catch (error) {
+          console.error(`✗ Error processing callback for ${candidate.name}:`, error.message);
+          failedCount++;
+        }
+      }
+
+      console.log(`\n========== Callbacks Processed ==========`);
+      console.log(`✓ Successful: ${successCount}`);
+      console.log(`✗ Failed: ${failedCount}`);
+      console.log(`==========================================\n`);
+
+      return {
+        success: true,
+        processed: dueCallbacks.length,
+        successful: successCount,
+        failed: failedCount
+      };
+
     } catch (error) {
-      console.error('❌ Error sending assessment link:', error.message);
-      return { success: false, error: error.message };
+      console.error('✗ Error processing scheduled callbacks:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
   /**
-   * Generate unique assessment link
+   * Process pending callbacks
+   */
+  static async processCallbacks() {
+    try {
+      const candidates = await CandidateModel.getPendingCallbacks();
+      
+      if (candidates.length === 0) {
+        console.log('No pending callbacks at this time');
+        return {
+          success: true,
+          message: 'No pending callbacks',
+          processed: 0
+        };
+      }
+
+      console.log(`\n========== Processing ${candidates.length} Callbacks ==========\n`);
+
+      let successCount = 0;
+      let failedCount = 0;
+
+      for (const candidate of candidates) {
+        try {
+          console.log(`ðŸ“ž Processing callback for ${candidate.name} (ID: ${candidate.id})`);
+          
+          // Generate callback prompt
+          const prompt = PromptService.getCallbackPrompt(
+            candidate.name,
+            candidate.target_company,
+            candidate.target_job_role
+          );
+
+          // Make the call
+          const callResult = await BolnaService.makeCall(candidate.phone, prompt);
+
+          if (callResult.success && callResult.run_id) {
+            // Update candidate - clear callback and set as screening call
+            await CandidateModel.update(candidate.id, {
+              status: 'Calling - Callback Screening',
+              call_status: 'Calling - Screening',
+              screening_run_id: callResult.run_id,
+              callback_requested: false,
+              callback_scheduled_time: null
+            });
+
+            console.log(`âœ“ Callback initiated for ${candidate.name}`);
+            successCount++;
+
+          } else {
+            // Callback failed - increment attempts
+            const newAttempts = (candidate.callback_attempts || 0) + 1;
+            const maxAttempts = parseInt(process.env.MAX_CALLBACK_ATTEMPTS || 3);
+
+            await CandidateModel.incrementCallbackAttempts(candidate.id);
+
+            if (newAttempts >= maxAttempts) {
+              // Max attempts reached
+              await CandidateModel.update(candidate.id, {
+                status: 'No Response - Max Callback Attempts',
+                call_status: 'Failed - No Response',
+                callback_requested: false
+              });
+              console.log(`âŒ Max callback attempts reached for ${candidate.name}`);
+            } else {
+              // Reschedule for 2 hours later
+              const nextCallbackTime = new Date(Date.now() + 2 * 60 * 60 * 1000);
+              await CandidateModel.update(candidate.id, {
+                callback_scheduled_time: nextCallbackTime,
+                status: 'Callback Rescheduled'
+              });
+              console.log(`â° Callback rescheduled for ${candidate.name} at ${nextCallbackTime}`);
+            }
+
+            failedCount++;
+          }
+
+          // Wait 3 seconds between calls
+          await new Promise(resolve => setTimeout(resolve, 3000));
+
+        } catch (error) {
+          console.error(`âŒ Error processing callback for ${candidate.name}:`, error.message);
+          failedCount++;
+        }
+      }
+
+      console.log(`\n========== Callbacks Processed ==========`);
+      console.log(`âœ“ Successful: ${successCount}`);
+      console.log(`âŒ Failed: ${failedCount}`);
+      console.log(`==========================================\n`);
+
+      return {
+        success: true,
+        processed: candidates.length,
+        successful: successCount,
+        failed: failedCount
+      };
+
+    } catch (error) {
+      console.error('âŒ Error processing callbacks:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Generate unique assessment link (for manual sending)
    */
   static generateAssessmentLink(candidateId) {
     const baseUrl = process.env.ASSESSMENT_BASE_URL || 'https://assessment.mindmapdigital.com';
@@ -146,12 +310,10 @@ class SchedulerService {
   static calculateFollowUpTime() {
     const now = new Date();
     const followUp = new Date();
-    followUp.setDate(now.getDate() + 1); // Next day
+    followUp.setDate(now.getDate() + 1);
     
     const currentHour = now.getHours();
     
-    // If current time is before 2 PM, schedule for 4 PM same/next day
-    // Otherwise schedule for 10 AM next day
     if (currentHour < 14) {
       followUp.setHours(16, 0, 0, 0);
     } else {
@@ -168,20 +330,16 @@ class SchedulerService {
     try {
       const candidates = await CandidateModel.getNeedingFollowUp();
       
-      console.log(`\n========== FOLLOW-UP CALLS ==========`);
       console.log(`Found ${candidates.length} candidates needing follow-up calls`);
-      console.log(`=====================================\n`);
 
       for (const candidate of candidates) {
         console.log(`Processing follow-up for ${candidate.name}...`);
-        console.log(`  Skills matched: ${candidate.skills_matched}`);
-        console.log(`  Attempt: ${candidate.failed_attempts + 1}`);
         
-        const prompt = await PromptService.getScreeningPrompt(
+        const prompt = PromptService.getScreeningPrompt(
           candidate.name,
           candidate.skills,
-          candidate.years_of_experience,
-          candidate.notice_period
+          candidate.target_company,
+          candidate.target_job_role
         );
 
         const callResult = await BolnaService.makeCall(candidate.phone, prompt);
@@ -192,9 +350,8 @@ class SchedulerService {
             call_status: 'Calling - Screening',
             screening_run_id: callResult.run_id
           });
-          console.log(`  ✓ Follow-up call initiated for ${candidate.name}\n`);
+          console.log(`âœ“ Follow-up call initiated for ${candidate.name}`);
         } else {
-          // Increment failed attempts
           const newAttempts = candidate.failed_attempts + 1;
           const maxAttempts = parseInt(process.env.MAX_CALL_ATTEMPTS || 2);
 
@@ -204,7 +361,7 @@ class SchedulerService {
               call_status: 'Failed - No Response',
               failed_attempts: newAttempts
             });
-            console.log(`  ❌ Max attempts reached for ${candidate.name}\n`);
+            console.log(`âŒ Max attempts reached for ${candidate.name}`);
           } else {
             const nextFollowUp = this.calculateFollowUpTime();
             await CandidateModel.update(candidate.id, {
@@ -212,18 +369,15 @@ class SchedulerService {
               follow_up_time: nextFollowUp,
               status: 'Follow-Up Scheduled'
             });
-            console.log(`  ⏰ Next follow-up scheduled for ${candidate.name} at ${nextFollowUp.toISOString()}\n`);
+            console.log(`â° Next follow-up scheduled for ${candidate.name}`);
           }
         }
 
-        // Wait 3 seconds between calls
         await new Promise(resolve => setTimeout(resolve, 3000));
       }
 
-      console.log(`========== FOLLOW-UP COMPLETE ==========\n`);
-
     } catch (error) {
-      console.error('❌ Error processing follow-up calls:', error.message);
+      console.error('âŒ Error processing follow-up calls:', error.message);
     }
   }
 }

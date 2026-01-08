@@ -14,9 +14,10 @@ class CandidateModel {
   static async create(candidateData) {
     const query = `
       INSERT INTO candidates (
-        name, phone, email, skills, skills_matched, years_of_experience, 
-        current_company, notice_period, batch_id, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        name, phone, email, skills, years_of_experience, 
+        current_company, notice_period, batch_id, status,
+        target_company, target_job_role
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *
     `;
     
@@ -25,12 +26,13 @@ class CandidateModel {
       candidateData.phone,
       candidateData.email,
       candidateData.skills,
-      candidateData.skills_matched || null,
       candidateData.years_of_experience,
       candidateData.current_company,
       candidateData.notice_period,
       candidateData.batch_id,
-      'New'
+      'New',
+      candidateData.target_company || null,
+      candidateData.target_job_role || null
     ];
     
     const result = await pool.query(query, values);
@@ -53,12 +55,6 @@ class CandidateModel {
     if (filters.status) {
       conditions.push(`status = $${paramCount}`);
       values.push(filters.status);
-      paramCount++;
-    }
-
-    if (filters.min_score !== undefined) {
-      conditions.push(`overall_qualification_score >= $${paramCount}`);
-      values.push(filters.min_score);
       paramCount++;
     }
 
@@ -139,76 +135,46 @@ class CandidateModel {
     return result.rows[0];
   }
 
-  // Update candidate with scoring breakdown
-  static async updateWithScores(id, scoreData) {
-    const query = `
-      UPDATE candidates
-      SET
-        notice_period_score = $2,
-        budget_score = $3,
-        location_score = $4,
-        experience_score = $5,
-        technical_score = $6,
-        communication_score = $7,
-        overall_qualification_score = $8,
-        qualification_breakdown = $9,
-        screening_transcript = $10,
-        conversation_summary = $11,
-        status = $12,
-        call_status = $13,
-        tech_score = $14,
-        job_interest = $15,
-        confidence_score = $16
-      WHERE id = $1
-      RETURNING *
-    `;
-
-    const values = [
-      id,
-      scoreData.notice_period_score || 0,
-      scoreData.budget_score || 0,
-      scoreData.location_score || 0,
-      scoreData.experience_score || 0,
-      scoreData.technical_score || 0,
-      scoreData.communication_score || 0,
-      scoreData.overall_qualification_score || 0,
-      JSON.stringify(scoreData.qualification_breakdown || {}),
-      scoreData.screening_transcript || null,
-      scoreData.conversation_summary || null,
-      scoreData.status || 'Completed',
-      scoreData.call_status || 'Completed',
-      scoreData.tech_score || null,
-      scoreData.job_interest || null,
-      scoreData.confidence_score || null
-    ];
-
-    const result = await pool.query(query, values);
-    return result.rows[0];
-  }
-
-  // Get pending candidates (for calling) - only those with matched skills
+  // Get pending candidates (for calling) - only if 2+ skills match
   static async getPending() {
     const query = `
-      SELECT * FROM candidates 
-      WHERE status = 'New' 
-      AND phone IS NOT NULL 
-      AND phone != 'Not available'
-      AND (skills_matched IS NOT NULL OR skills_matched != '')
-      ORDER BY created_at ASC
+      SELECT c.*, b.required_skills
+      FROM candidates c
+      LEFT JOIN batches b ON c.batch_id = b.batch_id
+      WHERE c.status = 'New' 
+      AND c.phone IS NOT NULL 
+      AND c.phone != 'Not available'
+      AND (c.callback_requested = FALSE OR c.callback_requested IS NULL)
+      ORDER BY c.created_at ASC
     `;
     const result = await pool.query(query);
-    return result.rows;
-  }
-
-  // Get qualified candidates (overall score >= threshold)
-  static async getQualified(threshold = 45) {
-    const query = `
-      SELECT * FROM candidates 
-      WHERE overall_qualification_score >= $1
-      ORDER BY overall_qualification_score DESC, created_at DESC
-    `;
-    const result = await pool.query(query, [threshold]);
-    return result.rows;
+    
+    // Filter candidates with at least 2 matching skills
+    const filteredCandidates = result.rows.filter(candidate => {
+      if (!candidate.required_skills || !candidate.skills) {
+        return true; // If no requirements, include candidate
+      }
+      
+      const requiredSkills = candidate.required_skills
+        .toLowerCase()
+        .split(',')
+        .map(s => s.trim());
+      
+      const candidateSkills = candidate.skills
+        .toLowerCase()
+        .split(',')
+        .map(s => s.trim());
+      
+      const matchCount = requiredSkills.filter(reqSkill => 
+        candidateSkills.some(candSkill => 
+          candSkill.includes(reqSkill) || reqSkill.includes(candSkill)
+        )
+      ).length;
+      
+      return matchCount >= 2; // At least 2 skills must match
+    });
+    
+    return filteredCandidates;
   }
 
   // Get candidates needing follow-up
@@ -223,6 +189,64 @@ class CandidateModel {
     const maxAttempts = parseInt(process.env.MAX_CALL_ATTEMPTS || 2);
     const result = await pool.query(query, [maxAttempts]);
     return result.rows;
+  }
+
+  // Get pending callbacks
+  static async getPendingCallbacks() {
+    const query = `
+      SELECT * FROM candidates 
+      WHERE callback_requested = TRUE
+      AND callback_scheduled_time IS NOT NULL
+      AND callback_scheduled_time <= NOW()
+      AND callback_attempts < $1
+      AND status NOT IN ('Rejected - Low Score', 'No Response - Max Attempts')
+      ORDER BY callback_scheduled_time ASC
+    `;
+    const maxCallbackAttempts = parseInt(process.env.MAX_CALLBACK_ATTEMPTS || 3);
+    const result = await pool.query(query, [maxCallbackAttempts]);
+    return result.rows;
+  }
+
+  // Update callback status
+  static async updateCallbackStatus(id, callbackData) {
+    const updates = {
+      callback_requested: callbackData.callback_requested,
+      callback_scheduled_time: callbackData.callback_scheduled_time,
+      callback_reason: callbackData.callback_reason,
+      callback_attempts: callbackData.callback_attempts || 0,
+      last_callback_attempt: callbackData.last_callback_attempt || new Date(),
+      status: callbackData.status || 'Callback Scheduled'
+    };
+
+    return await this.update(id, updates);
+  }
+
+  // Increment callback attempts
+  static async incrementCallbackAttempts(id) {
+    const query = `
+      UPDATE candidates 
+      SET 
+        callback_attempts = callback_attempts + 1,
+        last_callback_attempt = NOW()
+      WHERE id = $1
+      RETURNING *
+    `;
+    const result = await pool.query(query, [id]);
+    return result.rows[0];
+  }
+
+  // Clear callback request
+  static async clearCallbackRequest(id) {
+    const query = `
+      UPDATE candidates 
+      SET 
+        callback_requested = FALSE,
+        callback_scheduled_time = NULL
+      WHERE id = $1
+      RETURNING *
+    `;
+    const result = await pool.query(query, [id]);
+    return result.rows[0];
   }
 
   // Get statistics
@@ -243,7 +267,8 @@ class CandidateModel {
       rejected: 0,
       scheduled: 0,
       failed: 0,
-      skill_mismatch: 0
+      callback_scheduled: 0,
+      callback_pending: 0
     };
 
     result.rows.forEach(row => {
@@ -255,48 +280,40 @@ class CandidateModel {
       else if (status.includes('completed')) stats.completed += parseInt(row.count);
       else if (status.includes('qualified')) stats.qualified += parseInt(row.count);
       else if (status.includes('rejected')) stats.rejected += parseInt(row.count);
-      else if (status.includes('scheduled')) stats.scheduled += parseInt(row.count);
-      else if (status.includes('skill') && status.includes('mismatch')) {
-        stats.skill_mismatch += parseInt(row.count);
+      else if (status.includes('scheduled') && !status.includes('callback')) {
+        stats.scheduled += parseInt(row.count);
       }
+      else if (status.includes('callback')) stats.callback_scheduled += parseInt(row.count);
       else if (status.includes('failed') || status.includes('no response')) {
         stats.failed += parseInt(row.count);
       }
     });
 
-    return stats;
-  }
-
-  // Get score distribution
-  static async getScoreDistribution(batchId = null) {
-    const query = batchId
-      ? `
-        SELECT 
-          COUNT(*) as total,
-          COUNT(CASE WHEN overall_qualification_score >= 70 THEN 1 END) as high_scorers,
-          COUNT(CASE WHEN overall_qualification_score >= 45 AND overall_qualification_score < 70 THEN 1 END) as medium_scorers,
-          COUNT(CASE WHEN overall_qualification_score < 45 AND overall_qualification_score IS NOT NULL THEN 1 END) as low_scorers,
-          AVG(overall_qualification_score) as avg_score,
-          MAX(overall_qualification_score) as max_score,
-          MIN(overall_qualification_score) as min_score
-        FROM candidates
-        WHERE batch_id = $1
-      `
-      : `
-        SELECT 
-          COUNT(*) as total,
-          COUNT(CASE WHEN overall_qualification_score >= 70 THEN 1 END) as high_scorers,
-          COUNT(CASE WHEN overall_qualification_score >= 45 AND overall_qualification_score < 70 THEN 1 END) as medium_scorers,
-          COUNT(CASE WHEN overall_qualification_score < 45 AND overall_qualification_score IS NOT NULL THEN 1 END) as low_scorers,
-          AVG(overall_qualification_score) as avg_score,
-          MAX(overall_qualification_score) as max_score,
-          MIN(overall_qualification_score) as min_score
-        FROM candidates
+    // Get pending callbacks count
+    if (batchId) {
+      const callbackQuery = `
+        SELECT COUNT(*) as count 
+        FROM candidates 
+        WHERE batch_id = $1 
+        AND callback_requested = TRUE 
+        AND callback_scheduled_time IS NOT NULL
+        AND callback_scheduled_time > NOW()
       `;
+      const callbackResult = await pool.query(callbackQuery, [batchId]);
+      stats.callback_pending = parseInt(callbackResult.rows[0]?.count || 0);
+    } else {
+      const callbackQuery = `
+        SELECT COUNT(*) as count 
+        FROM candidates 
+        WHERE callback_requested = TRUE 
+        AND callback_scheduled_time IS NOT NULL
+        AND callback_scheduled_time > NOW()
+      `;
+      const callbackResult = await pool.query(callbackQuery);
+      stats.callback_pending = parseInt(callbackResult.rows[0]?.count || 0);
+    }
 
-    const values = batchId ? [batchId] : [];
-    const result = await pool.query(query, values);
-    return result.rows[0];
+    return stats;
   }
 
   // Delete candidate (for testing)

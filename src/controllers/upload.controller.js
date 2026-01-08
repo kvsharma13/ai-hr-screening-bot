@@ -3,13 +3,12 @@ const fs = require('fs').promises;
 const ResumeService = require('../services/resume.service');
 const CandidateModel = require('../models/candidate.model');
 const BatchModel = require('../models/batch.model');
-const JobRequirementsModel = require('../models/jobRequirements.model');
 const { normalizePhone } = require('../utils/phoneFormatter');
 
 class UploadController {
   
   /**
-   * Handle resume upload and processing
+   * Handle resume upload with job requirements
    */
   static async uploadResumes(req, res) {
     try {
@@ -19,31 +18,44 @@ class UploadController {
         return res.status(400).json({ error: 'No files uploaded' });
       }
 
-      console.log(`\n========== Processing ${files.length} Resumes ==========\n`);
+      // Extract job requirements from request body
+      const jobRequirements = {
+        company: req.body.company || null,
+        job_role: req.body.job_role || null,
+        required_notice_period: req.body.required_notice_period || null,
+        budget_min_lpa: req.body.budget_min_lpa ? parseFloat(req.body.budget_min_lpa) : null,
+        budget_max_lpa: req.body.budget_max_lpa ? parseFloat(req.body.budget_max_lpa) : null,
+        location: req.body.location || null,
+        min_experience: req.body.min_experience ? parseFloat(req.body.min_experience) : null,
+        max_experience: req.body.max_experience ? parseFloat(req.body.max_experience) : null,
+        required_skills: req.body.required_skills || null
+      };
 
-      // Get current job requirements
-      const jobRequirements = await JobRequirementsModel.getCurrent();
-      
-      if (!jobRequirements || !jobRequirements.required_skills || jobRequirements.required_skills.length === 0) {
-        console.log('⚠️  Warning: No job requirements set. All candidates will be accepted.');
-      } else {
-        console.log(`✓ Job Requirements loaded:`);
-        console.log(`  - Required Skills: ${jobRequirements.required_skills.join(', ')}`);
-        console.log(`  - Minimum matches required: 2\n`);
-      }
+      console.log(`\n========== Processing ${files.length} Resumes ==========`);
+      console.log('Job Requirements:', jobRequirements);
+      console.log('==========\n');
 
-      // Create batch
+      // Create batch with job requirements
       const batchId = Date.now().toString();
-      await BatchModel.create(batchId);
+      await BatchModel.create(batchId, jobRequirements);
 
       const results = [];
       let stats = {
         total: files.length,
         successful: 0,
         duplicates: 0,
-        skill_mismatches: 0,
-        failed: 0
+        failed: 0,
+        skills_mismatch: 0
       };
+
+      // Parse required skills for matching
+      let requiredSkillsArray = [];
+      if (jobRequirements.required_skills) {
+        requiredSkillsArray = jobRequirements.required_skills
+          .toLowerCase()
+          .split(',')
+          .map(s => s.trim());
+      }
 
       for (const file of files) {
         try {
@@ -60,15 +72,9 @@ class UploadController {
 
           // Parse resume with OpenAI
           const extractedData = await ResumeService.parseResume(resumeText);
-          console.log('Extracted data:', {
-            name: extractedData.name,
-            phone: extractedData.phone,
-            email: extractedData.email,
-            skills: extractedData.skills.substring(0, 100) + '...',
-            experience: extractedData.years_of_experience
-          });
+          console.log('Extracted data:', extractedData);
 
-          // Normalize phone number for deduplication
+          // Normalize phone number
           const normalizedPhone = normalizePhone(extractedData.phone);
           
           if (!normalizedPhone) {
@@ -79,7 +85,7 @@ class UploadController {
           const existingCandidate = await CandidateModel.findByPhone(normalizedPhone);
 
           if (existingCandidate) {
-            console.log(`⚠️  DUPLICATE: ${extractedData.name} already exists (added on ${existingCandidate.created_at})`);
+            console.log(`⚠️ DUPLICATE: ${extractedData.name} already exists`);
             
             stats.duplicates++;
             results.push({
@@ -87,36 +93,47 @@ class UploadController {
               success: false,
               duplicate: true,
               data: extractedData,
-              message: `Candidate already exists in database (added on ${new Date(existingCandidate.created_at).toLocaleDateString()})`
+              message: `Candidate already exists in database`
             });
 
-            // Delete uploaded file
             await fs.unlink(file.path).catch(err => console.error('Error deleting file:', err));
             continue;
           }
 
-          // CHECK SKILL MATCH
-          const skillMatch = await ResumeService.checkSkillMatch(extractedData.skills);
-          
-          if (!skillMatch.isMatch) {
-            console.log(`❌ SKILL MISMATCH: ${extractedData.name}`);
-            console.log(`   ${skillMatch.reason}`);
-            
-            stats.skill_mismatches++;
-            results.push({
-              filename: file.originalname,
-              success: false,
-              skill_mismatch: true,
-              data: extractedData,
-              message: skillMatch.reason
-            });
+          // CHECK SKILLS MATCH (minimum 2 skills must match)
+          let skillsMatch = true;
+          if (requiredSkillsArray.length > 0 && extractedData.skills) {
+            const candidateSkillsArray = extractedData.skills
+              .toLowerCase()
+              .split(',')
+              .map(s => s.trim());
 
-            // Delete uploaded file
-            await fs.unlink(file.path).catch(err => console.error('Error deleting file:', err));
-            continue;
+            const matchCount = requiredSkillsArray.filter(reqSkill =>
+              candidateSkillsArray.some(candSkill =>
+                candSkill.includes(reqSkill) || reqSkill.includes(candSkill)
+              )
+            ).length;
+
+            if (matchCount < 2) {
+              skillsMatch = false;
+              console.log(`⚠️ SKILLS MISMATCH: ${extractedData.name} - only ${matchCount} skill(s) match (need 2+)`);
+              
+              stats.skills_mismatch++;
+              results.push({
+                filename: file.originalname,
+                success: false,
+                skills_mismatch: true,
+                data: extractedData,
+                matched_skills: matchCount,
+                message: `Skills mismatch: Only ${matchCount} skill(s) match (need at least 2)`
+              });
+
+              await fs.unlink(file.path).catch(err => console.error('Error deleting file:', err));
+              continue;
+            } else {
+              console.log(`✓ SKILLS MATCH: ${matchCount} skill(s) matched`);
+            }
           }
-
-          console.log(`✓ Skill Match: ${skillMatch.matchedSkills} (${skillMatch.matchCount} matches)`);
 
           // Extract name from email if needed
           const finalName = ResumeService.extractNameFromEmail(
@@ -124,33 +141,31 @@ class UploadController {
             extractedData.name
           );
 
-          // Prepare candidate data
+          // Prepare candidate data with job details
           const candidateData = {
             name: finalName,
             phone: normalizedPhone,
             email: extractedData.email || 'Not available',
-            skills: ResumeService.normalizeSkills(extractedData.skills) || 'Not available',
-            skills_matched: skillMatch.matchedSkills,
+            skills: extractedData.skills || 'Not available',
             years_of_experience: extractedData.years_of_experience || 'Not available',
             current_company: extractedData.current_company || 'Not available',
             notice_period: extractedData.notice_period || 'Not specified',
-            batch_id: batchId
+            batch_id: batchId,
+            target_company: jobRequirements.company,
+            target_job_role: jobRequirements.job_role
           };
 
           // Save to database
           const savedCandidate = await CandidateModel.create(candidateData);
 
           console.log(`✓ Saved candidate: ${savedCandidate.name} (ID: ${savedCandidate.id})`);
-          console.log(`  Matched Skills: ${skillMatch.matchedSkills}\n`);
 
           stats.successful++;
           results.push({
             filename: file.originalname,
             success: true,
             data: candidateData,
-            candidateId: savedCandidate.id,
-            matchedSkills: skillMatch.matchedSkills,
-            matchCount: skillMatch.matchCount
+            candidateId: savedCandidate.id
           });
 
           // Delete uploaded file
@@ -166,7 +181,6 @@ class UploadController {
             error: error.message
           });
 
-          // Delete uploaded file
           try {
             await fs.unlink(file.path);
           } catch (unlinkError) {
@@ -180,8 +194,8 @@ class UploadController {
 
       console.log('\n========== Processing Complete ==========');
       console.log(`✓ Successful: ${stats.successful}`);
-      console.log(`⚠️  Duplicates: ${stats.duplicates}`);
-      console.log(`❌ Skill Mismatches: ${stats.skill_mismatches}`);
+      console.log(`⚠️ Duplicates: ${stats.duplicates}`);
+      console.log(`⚠️ Skills Mismatch: ${stats.skills_mismatch}`);
       console.log(`❌ Failed: ${stats.failed}`);
       console.log('==========================================\n');
 
@@ -189,7 +203,8 @@ class UploadController {
         message: 'Processing complete',
         results,
         stats,
-        batchId
+        batchId,
+        jobRequirements
       });
 
     } catch (error) {

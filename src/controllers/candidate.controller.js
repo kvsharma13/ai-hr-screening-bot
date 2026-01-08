@@ -1,5 +1,6 @@
 // src/controllers/candidate.controller.js
 const CandidateModel = require('../models/candidate.model');
+const BatchModel = require('../models/batch.model');
 const BolnaService = require('../services/bolna.service');
 const PromptService = require('../services/prompt.service');
 const SchedulerService = require('../services/scheduler.service');
@@ -16,7 +17,6 @@ class CandidateController {
       let candidates;
 
       if (view === 'current') {
-        // Get latest batch
         const latestBatchId = await CandidateModel.getLatestBatchId();
         
         if (!latestBatchId) {
@@ -25,7 +25,6 @@ class CandidateController {
 
         candidates = await CandidateModel.getByBatch(latestBatchId);
       } else {
-        // Get all candidates
         candidates = await CandidateModel.getAll();
       }
 
@@ -65,73 +64,12 @@ class CandidateController {
   }
 
   /**
-   * Get qualified candidates (NEW)
-   */
-  static async getQualifiedCandidates(req, res) {
-    try {
-      const threshold = parseFloat(req.query.threshold || process.env.QUALIFICATION_SCORE_THRESHOLD || 45);
-      const view = req.query.view || 'current';
-
-      let batchId = null;
-      if (view === 'current') {
-        batchId = await CandidateModel.getLatestBatchId();
-      }
-
-      const candidates = await CandidateModel.getQualified(threshold, batchId);
-
-      res.json({
-        success: true,
-        threshold: threshold,
-        count: candidates.length,
-        candidates: candidates
-      });
-
-    } catch (error) {
-      console.error('Error fetching qualified candidates:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message
-      });
-    }
-  }
-
-  /**
-   * Get score distribution analytics (NEW)
-   */
-  static async getScoreDistribution(req, res) {
-    try {
-      const view = req.query.view || 'current';
-
-      let batchId = null;
-      if (view === 'current') {
-        batchId = await CandidateModel.getLatestBatchId();
-      }
-
-      const distribution = await CandidateModel.getScoreDistribution(batchId);
-
-      res.json({
-        success: true,
-        view: view,
-        distribution: distribution
-      });
-
-    } catch (error) {
-      console.error('Error fetching score distribution:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message
-      });
-    }
-  }
-
-  /**
    * Call a single candidate
    */
   static async callCandidate(req, res) {
     try {
       const candidateId = parseInt(req.params.id, 10);
 
-      // Fetch candidate
       const candidate = await CandidateModel.findById(candidateId);
 
       if (!candidate) {
@@ -142,13 +80,17 @@ class CandidateController {
         return res.status(400).json({ error: 'Invalid phone number' });
       }
 
-      // Check if candidate has matched skills
-      if (!candidate.skills_matched || candidate.skills_matched === 'None') {
-        return res.status(400).json({
-          error: 'Cannot call candidate: No skills matched with job requirements',
-          message: 'This candidate does not meet minimum skill requirements (requires at least 2 matching skills)'
-        });
-      }
+      // Get job requirements from batch
+      const batch = await BatchModel.findById(candidate.batch_id);
+      const jobRequirements = batch ? {
+        required_notice_period: batch.required_notice_period,
+        budget_min_lpa: batch.budget_min_lpa,
+        budget_max_lpa: batch.budget_max_lpa,
+        location: batch.location,
+        min_experience: batch.min_experience,
+        max_experience: batch.max_experience,
+        required_skills: batch.required_skills
+      } : {};
 
       // Update status to calling
       await CandidateModel.update(candidateId, {
@@ -156,19 +98,19 @@ class CandidateController {
         status: 'Calling - Screening'
       });
 
-      // Generate screening prompt (now async)
-      const prompt = await PromptService.getScreeningPrompt(
+      // Generate screening prompt with job requirements
+      const prompt = PromptService.getScreeningPrompt(
         candidate.name,
         candidate.skills,
-        candidate.years_of_experience,
-        candidate.notice_period
+        candidate.target_company,
+        candidate.target_job_role,
+        jobRequirements
       );
 
       // Make call
       const callResult = await BolnaService.makeCall(candidate.phone, prompt);
 
       if (callResult.success && callResult.run_id) {
-        // Update with run_id
         await CandidateModel.update(candidateId, {
           screening_run_id: callResult.run_id
         });
@@ -178,11 +120,11 @@ class CandidateController {
 
         return res.json({
           success: true,
-          message: 'Screening call initiated. Multi-criteria analysis will run automatically via webhook.',
+          message: 'Screening call initiated. Webhook will deliver transcript automatically.',
           run_id: callResult.run_id
         });
       } else {
-        // Call failed - schedule follow-up
+        // Call failed
         const maxAttempts = parseInt(process.env.MAX_CALL_ATTEMPTS || 2);
         const newAttempts = (candidate.failed_attempts || 0) + 1;
 
@@ -196,7 +138,7 @@ class CandidateController {
           return res.status(500).json({
             success: false,
             error: callResult.error,
-            message: 'Max call attempts reached. Candidate marked as No Response.'
+            message: 'Max call attempts reached.'
           });
         } else {
           const followUpTime = SchedulerService.calculateFollowUpTime();
@@ -224,7 +166,7 @@ class CandidateController {
   }
 
   /**
-   * Call all pending candidates
+   * Call all pending candidates (with 2+ skills match filter)
    */
   static async callAllPending(req, res) {
     try {
@@ -232,31 +174,38 @@ class CandidateController {
 
       if (candidates.length === 0) {
         return res.json({
-          message: 'No pending candidates to call',
+          message: 'No pending candidates to call (after skills filtering)',
           count: 0
         });
       }
 
-      console.log(`\n========== BULK CALLING ==========`);
-      console.log(`Initiating calls for ${candidates.length} pending candidates...`);
-      console.log(`==================================\n`);
+      console.log(`Initiating calls for ${candidates.length} pending candidates (2+ skills matched)...`);
 
       const results = [];
 
-      // Stagger calls with 3 second delay
       for (let i = 0; i < candidates.length; i++) {
         const candidate = candidates[i];
 
         setTimeout(async () => {
           try {
-            console.log(`[${i + 1}/${candidates.length}] Calling ${candidate.name}`);
-            console.log(`  Skills matched: ${candidate.skills_matched}`);
+            // Get job requirements
+            const batch = await BatchModel.findById(candidate.batch_id);
+            const jobRequirements = batch ? {
+              required_notice_period: batch.required_notice_period,
+              budget_min_lpa: batch.budget_min_lpa,
+              budget_max_lpa: batch.budget_max_lpa,
+              location: batch.location,
+              min_experience: batch.min_experience,
+              max_experience: batch.max_experience,
+              required_skills: batch.required_skills
+            } : {};
 
-            const prompt = await PromptService.getScreeningPrompt(
+            const prompt = PromptService.getScreeningPrompt(
               candidate.name,
               candidate.skills,
-              candidate.years_of_experience,
-              candidate.notice_period
+              candidate.target_company,
+              candidate.target_job_role,
+              jobRequirements
             );
 
             const callResult = await BolnaService.makeCall(candidate.phone, prompt);
@@ -268,7 +217,7 @@ class CandidateController {
                 screening_run_id: callResult.run_id
               });
 
-              console.log(`  ✓ Call initiated (run_id: ${callResult.run_id})\n`);
+              console.log(`✓ Call initiated for ${candidate.name}`);
             } else {
               const newAttempts = (candidate.failed_attempts || 0) + 1;
               const maxAttempts = parseInt(process.env.MAX_CALL_ATTEMPTS || 2);
@@ -279,7 +228,6 @@ class CandidateController {
                   call_status: 'Failed - No Response',
                   failed_attempts: newAttempts
                 });
-                console.log(`  ❌ Max attempts reached\n`);
               } else {
                 const followUpTime = SchedulerService.calculateFollowUpTime();
                 await CandidateModel.update(candidate.id, {
@@ -288,18 +236,16 @@ class CandidateController {
                   failed_attempts: newAttempts,
                   follow_up_time: followUpTime
                 });
-                console.log(`  ⏰ Follow-up scheduled\n`);
               }
             }
           } catch (error) {
-            console.error(`  ❌ Error calling ${candidate.name}:`, error.message, '\n');
+            console.error(`Error calling ${candidate.name}:`, error.message);
           }
-        }, i * 3000); // 3 second delay between calls
+        }, i * 3000);
 
         results.push({
           name: candidate.name,
           phone: candidate.phone,
-          skills_matched: candidate.skills_matched,
           status: 'Queued for calling'
         });
       }
@@ -312,6 +258,25 @@ class CandidateController {
 
     } catch (error) {
       console.error('Error calling all candidates:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }// ... existing callAllPending function above ...
+
+  /**
+   * Get call queue statistics
+   */
+  static async getQueueStats(req, res) {
+    try {
+      const CallQueueService = require('../services/callQueue.service');
+      const stats = await CallQueueService.getQueueStats();
+
+      res.json({
+        success: true,
+        stats
+      });
+
+    } catch (error) {
+      console.error('Error getting queue stats:', error);
       res.status(500).json({ error: error.message });
     }
   }

@@ -6,34 +6,35 @@ const schema = `
 DROP TABLE IF EXISTS call_logs CASCADE;
 DROP TABLE IF EXISTS candidates CASCADE;
 DROP TABLE IF EXISTS batches CASCADE;
-DROP TABLE IF EXISTS job_requirements CASCADE;
 
--- Job Requirements table (stores screening criteria)
-CREATE TABLE job_requirements (
-    id SERIAL PRIMARY KEY,
-    notice_period INTEGER,
-    budget INTEGER,
-    location VARCHAR(255),
-    min_experience INTEGER,
-    relocation_required BOOLEAN DEFAULT FALSE,
-    required_skills JSONB,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Batches table (track resume upload batches)
+-- Batches table (track resume upload batches with job requirements)
 CREATE TABLE batches (
     id SERIAL PRIMARY KEY,
     batch_id VARCHAR(50) UNIQUE NOT NULL,
+    
+    -- Job Details
+    company VARCHAR(255),
+    job_role VARCHAR(255),
+    
+    -- Job Requirements (for scoring)
+    required_notice_period VARCHAR(50),
+    budget_min_lpa NUMERIC(10,2),
+    budget_max_lpa NUMERIC(10,2),
+    location VARCHAR(255),
+    min_experience NUMERIC(10,2),
+    max_experience NUMERIC(10,2),
+    required_skills TEXT,
+    
+    -- Upload Stats
     total_resumes INTEGER DEFAULT 0,
     successful INTEGER DEFAULT 0,
     duplicates INTEGER DEFAULT 0,
-    skill_mismatches INTEGER DEFAULT 0,
     failed INTEGER DEFAULT 0,
+    
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Candidates table (main table replacing Excel)
+-- Candidates table (main table)
 CREATE TABLE candidates (
     id SERIAL PRIMARY KEY,
     
@@ -43,10 +44,18 @@ CREATE TABLE candidates (
     email VARCHAR(255),
     verified_email VARCHAR(255),
     skills TEXT,
-    skills_matched TEXT,
     years_of_experience VARCHAR(50),
     current_company VARCHAR(255),
     notice_period VARCHAR(100),
+    
+    -- Job Details (from batch)
+    target_company VARCHAR(255),
+    target_job_role VARCHAR(255),
+    
+    -- Candidate's Responses (from screening call)
+    candidate_notice_period VARCHAR(100),
+    candidate_budget_lpa NUMERIC(10,2),
+    candidate_location VARCHAR(255),
     
     -- Call Status
     call_status VARCHAR(100) DEFAULT 'Pending',
@@ -54,28 +63,27 @@ CREATE TABLE candidates (
     failed_attempts INTEGER DEFAULT 0,
     follow_up_time TIMESTAMP,
     
+    -- Callback Scheduling
+    callback_requested BOOLEAN DEFAULT FALSE,
+    callback_scheduled_time TIMESTAMP,
+    callback_reason VARCHAR(255),
+    callback_attempts INTEGER DEFAULT 0,
+    last_callback_attempt TIMESTAMP,
+    
     -- Screening Call Data (OpenAI analysis)
     screening_run_id VARCHAR(255),
     screening_transcript TEXT,
     
-    -- Individual Criterion Scores (0-20 points each for mandatory, 0-40 for technical)
-    notice_period_score INTEGER DEFAULT 0,
-    budget_score INTEGER DEFAULT 0,
-    location_score INTEGER DEFAULT 0,
-    experience_score INTEGER DEFAULT 0,
-    technical_score INTEGER DEFAULT 0,
-    communication_score INTEGER DEFAULT 0,
+    -- Scoring (out of 100)
+    notice_period_score NUMERIC(5,2),
+    budget_score NUMERIC(5,2),
+    location_score NUMERIC(5,2),
+    experience_score NUMERIC(5,2),
+    technical_score NUMERIC(5,2),
+    confidence_fluency_score NUMERIC(5,2),
+    total_score NUMERIC(5,2),
     
-    -- Overall Score (0-100%)
-    overall_qualification_score NUMERIC(5,2),
-    
-    -- Detailed breakdown stored as JSON
-    qualification_breakdown JSONB,
-    
-    -- Legacy fields (for backward compatibility)
-    tech_score NUMERIC(5,2),
     job_interest VARCHAR(50),
-    confidence_score INTEGER,
     conversation_summary TEXT,
     
     -- Scheduling Call Data
@@ -110,13 +118,15 @@ CREATE INDEX idx_candidates_phone ON candidates(phone);
 CREATE INDEX idx_candidates_status ON candidates(status);
 CREATE INDEX idx_candidates_batch ON candidates(batch_id);
 CREATE INDEX idx_candidates_created ON candidates(created_at);
-CREATE INDEX idx_candidates_overall_score ON candidates(overall_qualification_score);
-CREATE INDEX idx_candidates_skills_matched ON candidates(skills_matched);
+CREATE INDEX idx_candidates_total_score ON candidates(total_score);
+CREATE INDEX idx_candidates_callback_scheduled ON candidates(callback_scheduled_time) 
+    WHERE callback_requested = TRUE AND callback_scheduled_time IS NOT NULL;
+CREATE INDEX idx_candidates_target_company ON candidates(target_company);
+CREATE INDEX idx_candidates_target_job_role ON candidates(target_job_role);
 CREATE INDEX idx_call_logs_candidate ON call_logs(candidate_id);
 CREATE INDEX idx_call_logs_type ON call_logs(call_type);
-CREATE INDEX idx_job_requirements_updated ON job_requirements(updated_at);
 
--- Create updated_at trigger function
+-- Create updated_at trigger
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -125,34 +135,26 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Apply trigger to candidates table
 CREATE TRIGGER update_candidates_updated_at 
     BEFORE UPDATE ON candidates 
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
 
--- Apply trigger to job_requirements table
-CREATE TRIGGER update_job_requirements_updated_at 
-    BEFORE UPDATE ON job_requirements 
-    FOR EACH ROW 
-    EXECUTE FUNCTION update_updated_at_column();
-
--- Insert default job requirements (optional - can be updated via UI)
-INSERT INTO job_requirements (
-    notice_period, 
-    budget, 
-    location, 
-    min_experience, 
-    relocation_required, 
-    required_skills
-) VALUES (
-    30,
-    15,
-    'Bangalore',
-    3,
-    false,
-    '["Python", "JavaScript", "SQL"]'::jsonb
-);
+-- Add comments for documentation
+COMMENT ON COLUMN candidates.target_company IS 'Company for which candidate is being recruited';
+COMMENT ON COLUMN candidates.target_job_role IS 'Job role/position for candidate';
+COMMENT ON COLUMN candidates.notice_period_score IS 'Score out of 10 for notice period';
+COMMENT ON COLUMN candidates.budget_score IS 'Score out of 10 for budget expectation';
+COMMENT ON COLUMN candidates.location_score IS 'Score out of 10 for location match';
+COMMENT ON COLUMN candidates.experience_score IS 'Score out of 10 for experience';
+COMMENT ON COLUMN candidates.technical_score IS 'Score out of 40 for technical knowledge';
+COMMENT ON COLUMN candidates.confidence_fluency_score IS 'Score out of 10 for communication';
+COMMENT ON COLUMN candidates.total_score IS 'Total score out of 100';
+COMMENT ON COLUMN candidates.callback_requested IS 'True if candidate requested callback';
+COMMENT ON COLUMN batches.required_notice_period IS 'Maximum acceptable notice period';
+COMMENT ON COLUMN batches.budget_min_lpa IS 'Minimum budget in LPA';
+COMMENT ON COLUMN batches.budget_max_lpa IS 'Maximum budget in LPA';
+COMMENT ON COLUMN batches.required_skills IS 'Comma-separated required skills';
 
 `;
 
@@ -165,33 +167,13 @@ async function migrate() {
     await client.query(schema);
     
     console.log('✓ Database schema created successfully');
-    console.log('✓ Tables created:');
-    console.log('  - job_requirements (new)');
-    console.log('  - batches');
-    console.log('  - candidates (with new scoring columns)');
-    console.log('  - call_logs');
+    console.log('✓ Tables created: batches, candidates, call_logs');
     console.log('✓ Indexes created for optimal performance');
     console.log('✓ Triggers configured');
-    console.log('✓ Default job requirements inserted\n');
-    
-    // Display the default job requirements
-    const result = await client.query('SELECT * FROM job_requirements LIMIT 1');
-    if (result.rows.length > 0) {
-      console.log('📋 Default Job Requirements:');
-      const req = result.rows[0];
-      console.log(`  - Notice Period: ≤ ${req.notice_period} days`);
-      console.log(`  - Budget: ≤ ${req.budget} LPA`);
-      console.log(`  - Location: ${req.location}`);
-      console.log(`  - Min Experience: ${req.min_experience} years`);
-      console.log(`  - Relocation Required: ${req.relocation_required ? 'Yes' : 'No'}`);
-      
-      // Fix: required_skills is already parsed by PostgreSQL as JSONB
-      const skills = Array.isArray(req.required_skills) ? req.required_skills : [];
-      console.log(`  - Required Skills: ${skills.join(', ')}`);
-      console.log('\n  💡 You can update these via the UI\n');
-    }
-    
-    console.log('Migration completed successfully!');
+    console.log('✓ Job requirements fields added');
+    console.log('✓ Scoring fields added (notice, budget, location, experience, technical, confidence)');
+    console.log('✓ Callback fields added');
+    console.log('\nMigration completed successfully!');
     process.exit(0);
   } catch (error) {
     console.error('❌ Migration failed:', error.message);
